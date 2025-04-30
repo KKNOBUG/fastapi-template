@@ -6,7 +6,7 @@
 @Module  : project_config.py
 @DateTime: 2025/1/15 16:08
 """
-import os.path
+import os
 import platform
 from typing import List, Dict, Any
 
@@ -14,9 +14,14 @@ from pydantic_settings import BaseSettings
 
 from common.file_utils import FileUtils
 from common.shell_utils import ShellUtils
+from configure import load_environment_file
 
 
 class ProjectConfig(BaseSettings):
+    # 环境信息
+    ENV_NAME: str = ""
+    ENV_FILE: str = ""
+
     # 项目描述
     APP_VERSION: str = "0.1.1"
     APP_TITLE: str = "Fastapi Application"
@@ -33,8 +38,8 @@ class ProjectConfig(BaseSettings):
     SERVER_APP: str = "start:app"
     SERVER_HOST: str = ShellUtils.acquire_localhost()
     SERVER_SYSTEM: str = platform.system()
-    SERVER_PORT: int = 8518
-    SERVER_DEBUG: bool = SERVER_SYSTEM != "Linux"  # Windows | Linux | Darwin
+    SERVER_PORT: int = os.getenv("SERVER_PORT", 8519)
+    SERVER_DEBUG: bool = os.getenv("SERVER_DEBUG", True) or SERVER_SYSTEM != "Linux"  # Windows | Linux | Darwin
     SERVER_DELAY: int = 5
 
     # 安全认证配置
@@ -70,7 +75,7 @@ class ProjectConfig(BaseSettings):
     STATIC_IMG_DIR: str = os.path.abspath(os.path.join(STATIC_DIR, "image"))
     MIGRATION_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "migrations"))
 
-    # # 允许访问的源（域名）列表
+    # 允许访问的源（域名）列表
     CORS_ORIGINS: List[str] = [
         "http://localhost",
         "http://localhost:5000",
@@ -175,11 +180,11 @@ class ProjectConfig(BaseSettings):
     # 数据库配置
     # DATABASE_USERNAME: str = quote("username")
     # DATABASE_PASSWORD: str = quote("password")
-    DATABASE_USERNAME: str = ""
-    DATABASE_PASSWORD: str = ""
-    DATABASE_HOST: str = ""
-    DATABASE_PORT: str = "3306"
-    DATABASE_NAME: str = "krun"
+    DATABASE_USERNAME: str = os.getenv("DATABASE_USERNAME", "")
+    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "")
+    DATABASE_PORT: str = os.getenv("DATABASE_PORT", "")
+    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "")
     DATABASE_URL: str = f"mysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}?charset=utf8mb4&time_zone=+08:00"
     DATABASE_CONNECTIONS: Dict[str, Any] = {
         "default": {
@@ -201,11 +206,23 @@ class ProjectConfig(BaseSettings):
     }
 
     # Redis 配置
-    REDIS_USERNAME: str = ""
-    REDIS_PASSWORD: str = ""
-    REDIS_HOST: str = ""
-    REDIS_PORT: str = ""
+    REDIS_USERNAME: str = os.getenv("REDIS_USERNAME", "")
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "")
+    REDIS_PORT: str = os.getenv("REDIS_PORT", "")
     REDIS_URL: str = f"redis://{REDIS_USERNAME}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0"
 
 
-PROJECT_CONFIG = ProjectConfig()
+class ProjectConfigSingleton:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            env_name, env_file = load_environment_file()
+            cls._instance = ProjectConfig()
+            cls._instance.ENV_NAME = env_name
+            cls._instance.ENV_FILE = env_file
+        return cls._instance
+
+
+PROJECT_CONFIG = ProjectConfigSingleton()

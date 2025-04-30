@@ -128,7 +128,7 @@ celerybeat.pid
 *.sage.py
 
 # Environments
-.env
+#.env   # 部署时需要保护好该文件，避免其在生产环境中被未授权访问。
 .venv
 env/
 venv/

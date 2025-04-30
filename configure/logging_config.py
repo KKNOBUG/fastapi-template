@@ -36,7 +36,7 @@ def loguru_logging() -> logger:
 
     # 添加文件处理器（异常）
     logger.add(
-        os.path.join(PROJECT_CONFIG.OUTPUT_LOGS_DIR, "{time:YYYY-MM-DD}_ERROR_执行日志.log"),
+        os.path.join(PROJECT_CONFIG.OUTPUT_LOGS_DIR, "{time:YYYYMMDD}_ERROR_执行日志.log"),
         format=format_str,
         level="ERROR",
         encoding='utf-8',

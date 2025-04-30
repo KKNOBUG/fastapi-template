@@ -144,5 +144,7 @@ def register_routers(app: FastAPI) -> None:
     static_modules["swagger_favicon_url"] = PROJECT_CONFIG.APP_OPENAPI_FAVICON_URL
 
     # 导入路由蓝图
+    from applications.base.views.routes_view import routers
 
-    # 挂在路由蓝图
+    # 挂载路由蓝图
+    app.include_router(router=routers, prefix="/base", tags=["基础服务"])

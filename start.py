@@ -12,11 +12,17 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from tortoise import Tortoise
 
-from core.initializations.app_initialization import register_logging, register_exceptions, register_middlewares, \
-    register_routers
-from core.responses.http_response import SuccessResponse
-from configure.project_config import PROJECT_CONFIG
+from core.initializations.app_initialization import (
+    register_logging,
+    register_exceptions,
+    register_middlewares,
+    register_routers,
+)
+
 from configure.global_config import GLOBAL_CONFIG
+from configure.project_config import PROJECT_CONFIG
+from configure.logging_config import logger as LOGGER
+from core.responses.http_response import SuccessResponse
 
 
 @asynccontextmanager
@@ -56,6 +62,23 @@ async def root():
 if __name__ == '__main__':
     import uvicorn
 
+    banner: str = f"""            
+    ▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄▄▄▄▄▄▄▄
+    █░░░░░░░░░░░█  █░░░░░░░░░░░░█  █░░░░░░░░░░░░█  █░░░░░░░░░░░░█  █░░░░░░░░░░░░█  █░░░░░░░░░░░░█  █░░░░░░░░░░░░█
+    █░█▀▀▀▀▀▀▀▀▀▀  █░█▀▀▀▀▀▀▀▀█░█  █░█▀▀▀▀▀▀▀▀▀▀▀  ▀▀▀▀▀▀█░█▀▀▀▀▀  █░█▀▀▀▀▀▀▀▀█░█  █░█▀▀▀▀▀▀▀▀█░█  ▀▀▀▀▀█░░█▀▀▀▀▀ 
+    █░█▄▄▄▄▄▄▄▄▄▄  █░█▄▄▄▄▄▄▄▄█░█  █░█▄▄▄▄▄▄▄▄▄▄▄        █░█       █░█▄▄▄▄▄▄▄▄█░█  █░█▄▄▄▄▄▄▄▄█░█       █░░█     
+    █░░░░░░░░░░░█  █░░░░░░░░░░░░█  █░░░░░░░░░░░░█        █░█       █░░░░░░░░░░░░█  █░░░░░░░░░░░░█       █░░█     
+    █░█▀▀▀▀▀▀▀▀▀▀  █░█▀▀▀▀▀▀▀▀█░█  ▀▀▀▀▀▀▀▀▀▀▀█░█        █░█       █░█▀▀▀▀▀▀▀▀█░█  █░█▀▀▀▀▀▀▀▀▀▀        █░░█     
+    █░█            █░█        █░█             █░█        █░█       █░█        █░█  █░█                  █░░█    
+    █░█            █░█        █░█  ▄▄▄▄▄▄▄▄▄▄▄█░█        █░█       █░█        █░█  █░█             ▄▄▄▄▄█░░█▄▄▄▄▄ 
+    █░█            █░█        █░█  █░░░░░░░░░░░░█        █░█       █░█        █░█  █░█             █░░░░░░░░░░░░█
+    ▀▀▀            ▀▀▀        ▀▀▀  ▀▀▀▀▀▀▀▀▀▀▀▀▀▀        ▀▀▀       ▀▀▀        ▀▀▀  ▀▀▀             ▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+    环境名称：{PROJECT_CONFIG.ENV_NAME}
+    服务主机：{PROJECT_CONFIG.SERVER_HOST}
+    服务端口：{PROJECT_CONFIG.SERVER_PORT}
+    """
+    LOGGER.info(banner)
     uvicorn.run(
         app=PROJECT_CONFIG.SERVER_APP,
         host=PROJECT_CONFIG.SERVER_HOST,
