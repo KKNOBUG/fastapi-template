@@ -7,10 +7,13 @@
 @DateTime: 2025/4/28 18:05
 """
 
+from configure.global_config import GLOBAL_CONFIG
+from configure.project_config import PROJECT_CONFIG
+from configure.logging_config import logger as LOGGER
 
-def print_hi(name):
-    print(f'Hi, {name}')
+__all__ = (
+    GLOBAL_CONFIG,
+    PROJECT_CONFIG,
+    LOGGER,
 
-
-if __name__ == '__main__':
-    print_hi('Python')
+)

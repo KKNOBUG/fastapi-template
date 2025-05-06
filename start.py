@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from tortoise import Tortoise
 
+from core import GLOBAL_CONFIG, PROJECT_CONFIG, LOGGER
 from core.initializations.app_initialization import (
     register_logging,
     register_exceptions,
@@ -19,9 +20,6 @@ from core.initializations.app_initialization import (
     register_routers,
 )
 
-from configure.global_config import GLOBAL_CONFIG
-from configure.project_config import PROJECT_CONFIG
-from configure.logging_config import logger as LOGGER
 from core.responses.http_response import SuccessResponse
 
 
