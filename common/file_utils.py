@@ -2,20 +2,24 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : file_utils.py
 @DateTime: 2025/1/14 12:28
 """
-import glob, os, shutil, threading, mimetypes, zipfile
+import glob
+import mimetypes
+import os
+import shutil
+import threading
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Union, Optional
 
-from core.exceptions.base_exceptions import (
-    TypeRejectException,
-    NotFoundException,
-    NotImplementedException,
-    ParameterException
+import yaml
+
+from backend.core.exceptions import (
+    TypeRejectException, NotFoundException, NotImplementedException, ParameterException
 )
 
 
@@ -195,9 +199,11 @@ class FileUtils:
     def get_all_files(abspath: Union[str, Path],
                       return_full_path: bool = True,
                       return_precut_path: Optional[str] = None,
-                      startswith: Optional[str] = None, endswith: Optional[str] = None,
+                      startswith: Optional[str] = None,
+                      endswith: Optional[str] = None,
                       extension: Optional[str] = None,
-                      exclude_startswith: Optional[str] = None, exclude_endswith: Optional[str] = None,
+                      exclude_startswith: Optional[str] = None,
+                      exclude_endswith: Optional[str] = None,
                       exclude_extension: Optional[str] = None) -> list:
         """
         获取指定路径下的所有文件，并根据条件进行过滤。
@@ -427,3 +433,25 @@ class FileUtils:
                     zip.write(filepath, writepath)
             zip.close()
         return zip_file_name
+
+    def read_file(self, file_path: str, file_type: str) -> str:
+        with open(file_path, 'r') as file:
+            if file_type == 'yml':
+                content = yaml.safe_load(file)
+            else:
+                content = file.readlines()
+        return content
+
+    def read_files(self, path: str, file_type: str) -> str:
+        list_file = [item for item in os.listdir(path) if item.endswith(f'.{file_type}')]
+        documentation = []
+        if len(list_file) == 1:
+            file_path = f"{path}/{list_file[0]}"
+            response = self.read_file(file_path, file_type)
+            return response
+        else:
+            for item in list_file:
+                file_path = f"{path}/{item}"
+                file = self.read_file(file_path, file_type)
+                documentation += file
+            return '\n'.join(documentation)

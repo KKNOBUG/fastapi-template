@@ -2,19 +2,22 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : http_exceptions.py
 @DateTime: 2025/1/17 22:30
 """
+import traceback
+
 from fastapi import Request, status
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from starlette.exceptions import HTTPException
 from tortoise.exceptions import DoesNotExist
 
-from core.responses.base_response import BaseResponse
-from core.responses.http_response import (
+from backend.core.responses import (
+    BaseResponse,
     ParameterResponse,
     ForbiddenResponse,
+    UnauthorizedResponse,
     NotFoundResponse,
     MethodNotAllowedResponse,
     RequestTimeoutResponse,
@@ -46,8 +49,14 @@ async def response_validation_exception_handler(request: Request, exc: ResponseV
 
 # 当发生 HTTP 相关的异常时，如 403 禁止访问、404 未找到等，会触发 HTTPException 异常
 async def http_exception_handler(request: Request, exc: HTTPException) -> BaseResponse:
+    if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+        return UnauthorizedResponse(message=str(exc.detail) if hasattr(exc, "detail") else str(exc))
+
     if exc.status_code == status.HTTP_403_FORBIDDEN:
-        return ForbiddenResponse(message=f"请求服务 {request.method} 未被授权")
+        detail = str(exc.detail) if hasattr(exc, "detail") and exc.detail else None
+        return ForbiddenResponse(
+            message=detail or f"请求服务 {request.method} 未被授权"
+        )
 
     elif exc.status_code == status.HTTP_404_NOT_FOUND:
         return NotFoundResponse(message=f"请求资源 {request.url.path} 不可访达")
@@ -82,5 +91,8 @@ async def null_point_exception_handler(request: Request, exc: DoesNotExist) -> B
 
 # 当发生未被其他特定异常处理器处理的异常时，会触发此函数
 async def app_exception_handler(request: Request, exc: Exception) -> BaseResponse:
-    error_message = f"服务器发生未知错误，请稍后重试，或点击右上角二维码加入答疑群。具体错误信息: {str(exc)}"
-    return FailureResponse(message=error_message)
+    error_traceback = traceback.format_exc()
+    error_message = f"服务器发生未知错误，请稍后重试，或点击右上角二维码加入答疑群"
+    print(error_message)
+    print(error_traceback)
+    return FailureResponse(message=error_message, data=f"{error_traceback}")

@@ -2,17 +2,17 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : base_response.py
 @DateTime: 2025/1/16 16:14
 """
-import json
 from typing import Optional, Union, List, Any, Dict
 
+import orjson
 from fastapi.encoders import jsonable_encoder
 from starlette.responses import JSONResponse
 
-from enums.app_enum import Code, Status, Message
+from backend.enums import Code, Status, Message
 
 
 class BaseResponse(JSONResponse):
@@ -42,31 +42,26 @@ class BaseResponse(JSONResponse):
 
         if message and isinstance(message, str):
             status: bool = "错误代码" in message and "错误信息" in message
-            self.message = json.loads(message)["错误信息"] if status else message
+            self.message = orjson.loads(message)["错误信息"] if status else message
         elif message and isinstance(message, Message):
             self.message = message.value
 
-        if data and isinstance(data, (int, str, list, dict)):
+        if data or isinstance(data, (int, str, list, dict)):
             self.data = data
 
-        if total and isinstance(total, int):
+        if total or isinstance(total, (int, float)):
             self.total = total
 
         resp = dict(
             code=self.code,
             status=self.status,
             message=self.message,
+            data=data,
+            total=total
         )
-        if self.data not in ("", [], {}):
-            resp["data"] = self.data
-        if self.total is None and isinstance(self.data, (dict, list)):
-            resp["total"] = len(self.data)
-        elif self.total:
-            resp["total"] = self.total
 
         super(BaseResponse, self).__init__(
             status_code=self.http_status_code,
             content=jsonable_encoder(resp),
             **kwargs
         )
-

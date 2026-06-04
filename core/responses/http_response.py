@@ -2,14 +2,14 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : http_response.py
 @DateTime: 2025/2/1 21:43
 """
 from typing import Optional, Union, List, Any, Dict
 
-from core.responses.base_response import BaseResponse
-from enums.app_enum import Code, Status, Message
+from backend.core.responses import BaseResponse
+from backend.enums import Code, Status, Message
 
 DataType = Optional[Union[int, str, List, Dict[str, Any]]]
 
@@ -89,6 +89,17 @@ class FileTooManyResponse(BaseResponse):
 
     def __init__(self, message: Optional[str] = None, data: DataType = None, total: Optional[int] = None):
         super(FileTooManyResponse, self).__init__(message=message, data=data, total=total)
+
+
+class DataBaseStorageResponse(BaseResponse):
+    code = Code.CODE400
+    status = Status.FAILURE
+    message = "数据库存储异常"
+    data = {}
+    total = None
+
+    def __init__(self, message: Optional[str] = None, data: DataType = None, total: Optional[int] = None):
+        super(DataBaseStorageResponse, self).__init__(message=message, data=data, total=total)
 
 
 class DataAlreadyExistsResponse(BaseResponse):

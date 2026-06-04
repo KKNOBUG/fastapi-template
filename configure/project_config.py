@@ -2,80 +2,92 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : project_config.py
 @DateTime: 2025/1/15 16:08
 """
-import os
+import os.path
 import platform
+from functools import lru_cache
 from typing import List, Dict, Any
+from urllib.parse import quote_plus
 
-from pydantic_settings import BaseSettings
+from pydantic import Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing_extensions import Self
 
-from common.file_utils import FileUtils
-from common.shell_utils import ShellUtils
-from configure import load_environment_file
+from common import FileUtils, ShellUtils
+
+_BACKEND_PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+_BACKEND_PROJECT_CONF: str = os.path.join(_BACKEND_PROJECT_ROOT, ".env")
 
 
 class ProjectConfig(BaseSettings):
-    # 环境信息
-    ENV_NAME: str = ""
-    ENV_FILE: str = ""
+    model_config = SettingsConfigDict(
+        env_file=_BACKEND_PROJECT_CONF,
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
 
     # 项目描述
     APP_VERSION: str = "0.1.1"
-    APP_TITLE: str = "Fastapi Application"
-    APP_DESCRIPTION: str = "Fastapi Application"
-    APP_DOCS_URL: str = "/docs"
-    APP_REDOC_URL: str = "/redoc"
-    APP_OPENAPI_URL: str = "/openapi_url"
+    APP_TITLE: str = "fastapi-template"
+    APP_DESCRIPTION: str = """fastapi-template"""
+    APP_DOCS_URL: str = "/krun/docs"
+    APP_REDOC_URL: str = "/krun/redoc"
+    APP_OPENAPI_URL: str = "/krun/openapi_url"
     APP_OPENAPI_JS_URL: str = "/static/swagger-ui/swagger-ui-bundle.js"
     APP_OPENAPI_CSS_URL: str = "/static/swagger-ui/swagger-ui.css"
     APP_OPENAPI_FAVICON_URL: str = "/static/swagger-ui/favicon-32x32.png"
+    APP_OPENAPI_JS_URL_REDOC: str = "/static/redoc/bundles/redoc.standalone.js"
+    APP_OPENAPI_FAVICON_URL_REDOC: str = "/static/redoc/favicon.png"
     APP_OPENAPI_VERSION: str = "3.0.2"
 
     # 调试配置
-    SERVER_APP: str = "start:app"
+    SERVER_APP: str = "backend_main:app"
     SERVER_HOST: str = ShellUtils.acquire_localhost()
     SERVER_SYSTEM: str = platform.system()
-    SERVER_PORT: int = os.getenv("SERVER_PORT", 8519)
-    SERVER_DEBUG: bool = os.getenv("SERVER_DEBUG", True) or SERVER_SYSTEM != "Linux"  # Windows | Linux | Darwin
+    SERVER_PORT: int = 8518
+    SERVER_DEBUG: bool = SERVER_SYSTEM != "Linux"  # Windows | Linux | Darwin
     SERVER_DELAY: int = 5
 
-    # 安全认证配置
-    AUTH_SECRET_KEY: str = "3488a63e1765035d386f05409663f55c83bfae3b3c61a932744b20ad14244dcf"  # openssl rand -hex 32
+    # 安全认证配置（须在 backend/.env 或环境变量中配置）
+    AUTH_SECRET_KEY: str = Field(..., min_length=64, description="JWT密钥，建议: openssl rand -hex 32")
     AUTH_JWT_ALGORITHM: str = "HS256"
     AUTH_JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 day
 
     # 日志相关参数配置
-    # 文件大小轮转
+    LOGGER_FILE_NAME_PREFIX: str = "执行日志"
+    # 大小轮转："200 MB"
     # 日期轮转："1 day"、"1 week"、"1 month"
     # 时间轮转："HH:MM:SS"、"00:00"、"00:00:00"
-    LOGGER_ROTATION: str = '00:00:00'
-    # 保留30天
-    LOGGER_RETENTION: str = '30 days'
-    # 压缩格式
-    LOGGER_COMPRESSION: str = "zip"
+    LOGGER_ROTATION: str = "1 MB"
+    # 大小轮转后保留的备份文件个数（单文件多进程模式）
+    LOGGER_ROTATION_BACKUP_COUNT: int = 30
 
     # 项目路径相关配置
-    PROJECT_ROOT: str = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
-    APPLICATIONS_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "applications"))
-    COMMON_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "common"))
-    CONFIGURE_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "configure"))
-    CORE_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "core"))
-    DECORATORS_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "decorators"))
-    ENUMS_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "enums"))
-    OUTPUT_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "output"))
-    OUTPUT_DOCS_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "docs"))
-    OUTPUT_DOWNLOAD_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "download"))
+    APPLICATIONS_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "applications"))
+    CELERY_SCHEDULER_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "celery_scheduler"))
+    COMMON_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "common"))
+    CONFIGURE_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "configure"))
+    CORE_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "core"))
+    ENUMS_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "enums"))
+    OUTPUT_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "output"))
     OUTPUT_LOGS_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "logs"))
     OUTPUT_UPLOAD_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "upload"))
-    SERVICES_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "services"))
-    STATIC_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "static"))
+    OUTPUT_DOWNLOAD_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "download"))
+    OUTPUT_MEDIA_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "media"))
+    OUTPUT_DATAGRAM_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "datagram"))
+    OUTPUT_JMX_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "jmx"))
+    OUTPUT_XLSX_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "xlsx"))
+    OUTPUT_DOCS_DIR: str = os.path.abspath(os.path.join(OUTPUT_DIR, "docs"))
+    SERVICES_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "services"))
+    STATIC_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "static"))
     STATIC_IMG_DIR: str = os.path.abspath(os.path.join(STATIC_DIR, "image"))
-    MIGRATION_DIR: str = os.path.abspath(os.path.join(PROJECT_ROOT, "migrations"))
+    MIGRATION_DIR: str = os.path.abspath(os.path.join(_BACKEND_PROJECT_ROOT, "migrations"))
 
-    # 允许访问的源（域名）列表
+    # # 允许访问的源（域名）列表
     CORS_ORIGINS: List[str] = [
         "http://localhost",
         "http://localhost:5000",
@@ -98,12 +110,12 @@ class ProjectConfig(BaseSettings):
     # 文件上传设置
     UPLOAD_FILE_BASE_SIZE: int = 1024 * 1024  # 1MB
     UPLOAD_FILE_PEAK_SIZE: Dict[str, int] = {
-        "tiny": UPLOAD_FILE_BASE_SIZE * 32,
-        "micro": UPLOAD_FILE_BASE_SIZE * 64,
-        "small": UPLOAD_FILE_BASE_SIZE * 128,
-        "medium": UPLOAD_FILE_BASE_SIZE * 256,
-        "large": UPLOAD_FILE_BASE_SIZE * 512,
-        "huge": UPLOAD_FILE_BASE_SIZE * 1024,
+        "tiny": UPLOAD_FILE_BASE_SIZE * 16,
+        "micro": UPLOAD_FILE_BASE_SIZE * 32,
+        "small": UPLOAD_FILE_BASE_SIZE * 64,
+        "medium": UPLOAD_FILE_BASE_SIZE * 128,
+        "large": UPLOAD_FILE_BASE_SIZE * 256,
+        "huge": UPLOAD_FILE_BASE_SIZE * 512,
     }
     UPLOAD_FILE_SUFFIX: List[str] = [
         'image/jepg',
@@ -178,51 +190,98 @@ class ProjectConfig(BaseSettings):
     ]
 
     # 数据库配置
-    # DATABASE_USERNAME: str = quote("username")
-    # DATABASE_PASSWORD: str = quote("password")
-    DATABASE_USERNAME: str = os.getenv("DATABASE_USERNAME", "")
-    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
-    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "")
-    DATABASE_PORT: str = os.getenv("DATABASE_PORT", "")
-    DATABASE_NAME: str = os.getenv("DATABASE_NAME", "")
-    DATABASE_URL: str = f"mysql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}?charset=utf8mb4&time_zone=+08:00"
-    DATABASE_CONNECTIONS: Dict[str, Any] = {
-        "default": {
-            "engine": "tortoise.backends.mysql",  # 使用mysql引擎
-            "db_url": DATABASE_URL,
-            "credentials": {
-                "host": DATABASE_HOST,  # 数据库地址
-                "port": DATABASE_PORT,  # 数据库端口
-                "user": DATABASE_USERNAME,  # 数据库账户
-                "password": DATABASE_PASSWORD,  # 数据库密码
-                "database": DATABASE_NAME,  # 数据库名称
-                "minsize": 10,  # 连接池最小连接数
-                "maxsize": 40,  # 连接池最大连接数
-                "charset": "utf8mb4",  # 数据库字符编码
-                "echo": False,  # 数据库是否开启SQL语句回响
-                "autocommit": True  # 数据库是否开启SQL语句自动提交
+    DATABASE_AUTO_MIGRATION: bool = True
+    DATABASE_CONNECTIONS: Dict[str, Any] = {}
+    DATABASE_URL: str = Field(default="", description="数据库地址")
+    DATABASE_HOST: str = Field(..., min_length=1, description="数据库主机")
+    DATABASE_PORT: str = Field(..., min_length=1, description="数据库端口")
+    DATABASE_NAME: str = Field(..., min_length=1, description="数据库名称")
+    DATABASE_USERNAME: str = Field(..., min_length=1, description="数据库用户名")
+    DATABASE_PASSWORD: str = Field(..., min_length=1, description="数据库密码")
+
+    # Redis 配置（仅 requirepass 时用户名留空；密码含 @/: 等会在连接 URL 中做编码）
+    REDIS_URL: str = ""
+    REDIS_HOST: str = Field(..., min_length=1, description="Redis主机")
+    REDIS_PORT: str = Field(..., min_length=1, description="Redis端口")
+    REDIS_USERNAME: str = Field(default="", description="Redis用户名")
+    REDIS_PASSWORD: str = Field(..., min_length=1, description="Redis密码")
+
+    @model_validator(mode="after")
+    def validate_env_and_assemble_urls(self) -> Self:
+        if not self.AUTH_SECRET_KEY or len(self.AUTH_SECRET_KEY) < 64:
+            raise ValueError("AUTH_SECRET_KEY 配置为空或长度少于64位，请检查.env文件或环境变量")
+
+        for field_name in ("DATABASE_USERNAME", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME", "REDIS_HOST", "REDIS_PORT"):
+            if not getattr(self, field_name):
+                raise ValueError(f"{field_name} 配置为空，请请检查.env文件或环境变量")
+
+        return self.assemble_connection_urls()
+
+    def assemble_connection_urls(self) -> Self:
+        db_user = quote_plus(self.DATABASE_USERNAME)
+        db_password = quote_plus(self.DATABASE_PASSWORD)
+        self.DATABASE_URL = (
+            f"mysql://{db_user}:{db_password}@{self.DATABASE_HOST}:"
+            f"{self.DATABASE_PORT}/{self.DATABASE_NAME}"
+            f"?charset=utf8mb4&time_zone=+08:00"
+        )
+        self.DATABASE_CONNECTIONS = {
+            "default": {
+                "engine": "tortoise.backends.mysql",
+                "db_url": self.DATABASE_URL,
+                "credentials": {
+                    "host": self.DATABASE_HOST,
+                    "port": self.DATABASE_PORT,
+                    "user": self.DATABASE_USERNAME,
+                    "password": self.DATABASE_PASSWORD,
+                    "database": self.DATABASE_NAME,
+                    "minsize": 10,
+                    "maxsize": 40,
+                    "pool_recycle": 3600,
+                    "charset": "utf8mb4",
+                    "echo": False,
+                    "autocommit": True,
+                },
             }
         }
-    }
+        self.REDIS_URL = self.build_redis_url(db=0)
+        return self
 
-    # Redis 配置
-    REDIS_USERNAME: str = os.getenv("REDIS_USERNAME", "")
-    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "")
-    REDIS_PORT: str = os.getenv("REDIS_PORT", "")
-    REDIS_URL: str = f"redis://{REDIS_USERNAME}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/0"
+    @staticmethod
+    def format_redis_url(*, username: str, password: str, host: str, port: str, db: int) -> str:
+        auth = ""
+        if username:
+            auth += quote_plus(username)
+        auth += ":"
+        if password:
+            auth += quote_plus(password)
+        auth += "@"
+        return f"redis://{auth}{host or '127.0.0.1'}:{port or '6379'}/{db}"
+
+    def build_redis_url(self, db: int = 0) -> str:
+        return self.format_redis_url(
+            username=self.REDIS_USERNAME,
+            password=self.REDIS_PASSWORD,
+            host=self.REDIS_HOST,
+            port=self.REDIS_PORT,
+            db=db,
+        )
+
+    # Aerich：是否在应用启动时执行 init_db / migrate / upgrade 指令
+    # - 生产(Linux 且 SERVER_DEBUG=False)：始终执行迁移（不提供关闭选项）
+    # - 开发(SERVER_DEBUG=True)：默认不迁移；需要时由开发者手动把 DATABASE_AUTO_MIGRATION 改为 True
+    @property
+    def aerich_should_run_on_startup(self) -> bool:
+        if (not self.SERVER_DEBUG) and (self.SERVER_SYSTEM == "Linux"):
+            return True
+        if self.SERVER_DEBUG and self.DATABASE_AUTO_MIGRATION:
+            return True
+        return False
 
 
-class ProjectConfigSingleton:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            env_name, env_file = load_environment_file()
-            cls._instance = ProjectConfig()
-            cls._instance.ENV_NAME = env_name
-            cls._instance.ENV_FILE = env_file
-        return cls._instance
+@lru_cache(maxsize=1)
+def get_project_config() -> ProjectConfig:
+    return ProjectConfig()
 
 
-PROJECT_CONFIG = ProjectConfigSingleton()
+PROJECT_CONFIG = get_project_config()

@@ -6,47 +6,79 @@
 @Module  : app_middleware.py
 @DateTime: 2025/1/17 22:29
 """
-import json
 import time
 from io import BytesIO
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from urllib.parse import unquote
 
+import orjson
 from fastapi import Request, Response
 from starlette.datastructures import FormData
 
-from configure.project_config import PROJECT_CONFIG
-from configure.global_config import GLOBAL_CONFIG
-from configure.logging_config import logger as LOGGER
+from backend.applications.base.models.audit_model import Audit
+from backend.applications.user.models.user_model import User
+from backend.configure import PROJECT_CONFIG, GLOBAL_CONFIG, LOGGER, ROUTER_SUMMARY, ROUTER_TAGS
+from backend.services import AuthControl
 
 
 def is_upload_request(request: Request) -> bool:
+    """判断当前请求是否为文件上传请求（multipart/form-data 或路径含 upload）。
+
+    :param request: FastAPI/Starlette 请求对象。
+    :returns: 是上传请求返回 True，否则 False。
+    """
     path: str = request.url.path.lower()
     content_type: str = request.headers.get("content-type", "")
     return "multipart/form-data" in content_type.lower() or path.startswith("upload") or path.endswith("upload")
 
 
 def is_html_response(response: Response) -> bool:
+    """判断响应是否为 HTML 或 XML 文本类型。
+
+    :param response: 响应对象。
+    :returns: Content-Type 含 text/html 或 application/xml 时返回 True。
+    """
     content_type: str = response.headers.get("content-type", "")
     return "text/html" in content_type.lower() or "application/xml" in content_type.lower()
 
 
 def is_image_response(response: Response) -> bool:
+    """判断响应是否为图片类型。
+
+    :param response: 响应对象。
+    :returns: Content-Type 含 image 时返回 True。
+    """
     content_type: str = response.headers.get("content-type", "")
     return "image" in content_type.lower()
 
 
 def is_download_response(response: Response) -> bool:
+    """判断响应是否为附件下载（Content-Disposition 含 attachment）。
+
+    :param response: 响应对象。
+    :returns: 为附件下载时返回 True。
+    """
     content_disposition: str = response.headers.get("content-disposition", "")
     return "attachment" in content_disposition.lower()
 
 
 def is_longtext_response(response: Response) -> bool:
+    """判断响应体是否超过 102400 字节（用于决定是否截断审计日志中的响应体）。
+
+    :param response: 响应对象。
+    :returns: Content-Length 大于 5000 时返回 True。
+    """
     content_length: int = response.headers.get("content-length", 0)
-    return int(content_length) > 5000
+    return int(content_length) > 102400
 
 
 async def logging_middleware(request: Request, call_next):
+    """记录请求与响应摘要、耗时，并写入审计表；对上传/下载/大响应体做特殊处理。
+
+    :param request: 当前请求。
+    :param call_next: 下一层 ASGI 可调用对象。
+    :returns: 下游返回的 Response。
+    """
     # 接口服务时间
     start_time = time.time()
     request_time: str = time.strftime(GLOBAL_CONFIG.DATETIME_FORMAT2, time.localtime(start_time))
@@ -76,16 +108,21 @@ async def logging_middleware(request: Request, call_next):
                 form_data[field_name] = field_value
 
         # 重置流的位置到开头，确保后续处理能正确读取
-        request_body = json.dumps(form_data, ensure_ascii=False).encode("utf-8")
+        request_body = orjson.dumps(form_data)
         request._stream.seek(0)
 
     # 记录请求信息
     request_method: str = request.method
     request_router: str = request.url.path
     request_header: dict = dict(request.headers)
+    if "referer" in request_header and request_header["referer"]:
+        try:
+            request_header["referer"] = unquote(request_header["referer"])
+        except:
+            pass
     request_client: str = request.client.host if request.client else "127.0.0.1"
-    request_tags: str = GLOBAL_CONFIG.ROUTER_TAGS.get(request_router or "未定义", "未定义")
-    request_summary: str = GLOBAL_CONFIG.ROUTER_SUMMARY.get(request_router or "未定义", "未定义")
+    request_tags: str = ROUTER_TAGS.get(request_router or "未定义", "未定义")
+    request_summary: str = ROUTER_SUMMARY.get(request_router or "未定义", "未定义")
     request_body: bytes = request_body if is_upload else original_request_body.decode("utf-8", errors="ignore")
     request_params: str = unquote(request.query_params.__str__())
 
@@ -110,19 +147,19 @@ async def logging_middleware(request: Request, call_next):
     ):
         # 消费响应体
         if is_download:
-            response_body = b"<FILE DOWNLOAD>"
+            response_body: bytes = b"<FILE DOWNLOAD>"
         elif is_html:
-            response_body = b"<HTML CONTENT>"
+            response_body: bytes = b"<HTML CONTENT>"
         elif is_image:
-            response_body = b"IMAGE CONTENT"
+            response_body: bytes = b"<IMAGE CONTENT>"
         elif is_longtext:
-            response_body = b"LONGTEXT CONTENT"
+            response_body: bytes = b"<LONGTEXT CONTENT>"
         else:
             body_chunks = []
             async for chunk in response.body_iterator:
                 body_chunks.append(chunk)
 
-            response_body = b"".join(body_chunks).decode("utf-8", errors="ignore")
+            response_body: str = b"".join(body_chunks).decode("utf-8", errors="ignore")
 
             # 重置响应体
             response = Response(
@@ -152,10 +189,10 @@ async def logging_middleware(request: Request, call_next):
             "response_elapsed": response_elapsed
         }
         if isinstance(response_body, str):
-            _response = json.loads(response_body)
+            _response = orjson.loads(response_body)
             audit_log["response_code"] = _response.get("code", "")
             audit_log["response_message"] = _response.get("message", "")[:512]
-            audit_log["response_body"] = response_body
+            audit_log["response_params"] = response_body
             del _response
 
         request_message: str = f"\n> > > > > > > > > > > > > > > > > > > >\n" \
@@ -170,7 +207,7 @@ async def logging_middleware(request: Request, call_next):
                                f"响应头部：{audit_log.get('response_header')}\n" \
                                f"响应代码：{audit_log.get('response_code')}\n" \
                                f"响应消息：{audit_log.get('response_message')}\n" \
-                               f"响应参数：{audit_log.get('response_body')}\n" \
+                               f"响应参数：{audit_log.get('response_params')}\n" \
                                f"响应时间：{audit_log.get('response_time')}\n" \
                                f"响应耗时：{audit_log.get('response_elapsed')}\n" \
                                f"< < < < < < < < < < < < < < < < < < < < "

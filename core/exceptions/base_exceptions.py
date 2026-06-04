@@ -2,30 +2,36 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : base_exceptions.py
 @DateTime: 2025/1/13 13:45
 """
-import json
+from typing import Union, Optional
 
-from enums.base_error_enum import BaseErrorEnum
+import orjson
+
+from backend.enums import BaseErrorEnum
 
 
 class BaseExceptions(Exception):
 
-    def __init__(self, code: str = BaseErrorEnum.BASE999.code,
-                 message: str = BaseErrorEnum.BASE999.value,
-                 errenum: BaseErrorEnum = None) -> None:
+    def __init__(
+            self,
+            errenum: BaseErrorEnum = None,
+            code: str = BaseErrorEnum.BASE999.code,
+            message: str = BaseErrorEnum.BASE999.value,
+            data: Union[Optional[list], Optional[dict]] = None,
+    ) -> None:
         self.code = code
+        self.data = data
         self.message = message
 
         if errenum:
+            self.data = self.data
             self.code = self.code or errenum.code
             self.message = self.message or errenum.value
 
-        self._error = json.dumps(
-            {"code": self.code, "message": self.message}, ensure_ascii=False
-        )
+        self._error: str = orjson.dumps({"code": self.code, "message": self.message, "data": self.data}).decode("UTF-8")
 
     def __str__(self):
         return self._error
@@ -132,6 +138,13 @@ class DataAlreadyExistsException(BaseExceptions):
 class ParameterException(BaseExceptions):
     def __init__(self, **kwargs):
         kwargs.setdefault("errenum", BaseErrorEnum.BASE400)
+        kwargs.setdefault("code", BaseErrorEnum.BASE400.code)
+        super().__init__(**kwargs)
+
+
+class NoPermissionException(BaseExceptions):
+    def __init__(self, **kwargs):
+        kwargs.setdefault("errenum", BaseErrorEnum.BASE403)
         kwargs.setdefault("code", BaseErrorEnum.BASE400.code)
         super().__init__(**kwargs)
 
