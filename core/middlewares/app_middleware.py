@@ -15,10 +15,10 @@ import orjson
 from fastapi import Request, Response
 from starlette.datastructures import FormData
 
-from backend.applications.base.models.audit_model import Audit
-from backend.applications.user.models.user_model import User
-from backend.configure import PROJECT_CONFIG, GLOBAL_CONFIG, LOGGER, ROUTER_SUMMARY, ROUTER_TAGS
-from backend.services import AuthControl
+from applications.base.models.audit_model import Audit
+from applications.user.models.user_model import User
+from configure import PROJECT_CONFIG, GLOBAL_CONFIG, LOGGER, ROUTER_SUMMARY, ROUTER_TAGS
+from services import AuthControl
 
 
 def is_upload_request(request: Request) -> bool:
@@ -213,5 +213,20 @@ async def logging_middleware(request: Request, call_next):
                                f"< < < < < < < < < < < < < < < < < < < < "
 
         LOGGER.info(request_message)
+
+        try:
+            # 获取用户信息
+            user_obj: Optional[User] = None
+            token = request.headers.get("token")
+            if token:
+                user_obj: User = await AuthControl.is_authed(token)
+            audit_log["user_id"] = user_obj.id if user_obj else 0
+            audit_log["username"] = user_obj.username if user_obj else ""
+        except Exception as e:
+            audit_log["user_id"] = 0
+            audit_log["username"] = ""
+
+        # 审计落库
+        await Audit.create(**audit_log)
 
     return response

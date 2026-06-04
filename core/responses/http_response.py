@@ -8,8 +8,8 @@
 """
 from typing import Optional, Union, List, Any, Dict
 
-from backend.core.responses import BaseResponse
-from backend.enums import Code, Status, Message
+from core.responses import BaseResponse
+from enums import Code, Status, Message
 
 DataType = Optional[Union[int, str, List, Dict[str, Any]]]
 

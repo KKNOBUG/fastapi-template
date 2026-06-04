@@ -32,8 +32,14 @@ class ProjectConfig(BaseSettings):
 
     # 项目描述
     APP_VERSION: str = "0.1.1"
-    APP_TITLE: str = "fastapi-template"
-    APP_DESCRIPTION: str = """fastapi-template"""
+    APP_TITLE: str = "KRUN - 测管平台"
+    APP_DESCRIPTION: str = """
+    KRUN 测管平台是一款基于 Python 的 FastAPI 框架开发的实用型测试管理系统，旨在满足软件测试工作的日常需求。
+    它专注于提供最实用的功能，涵盖测试用例管理、测试环境配置、测试任务调度以及测试报告生成等多个关键环节。
+    用户可以轻松导入和导出测试用例，灵活调整测试计划，根据不同的测试阶段和项目需求对测试任务进行精确管理。
+    凭借 FastAPI 的高效性能，平台能够迅速响应各种操作，确保测试工作的连贯性和高效性。
+    同时，系统还支持历史测试数据的回溯和对比，帮助团队持续优化测试流程，为软件质量的提升提供强大支持。
+    """
     APP_DOCS_URL: str = "/krun/docs"
     APP_REDOC_URL: str = "/krun/redoc"
     APP_OPENAPI_URL: str = "/krun/openapi_url"
@@ -48,7 +54,7 @@ class ProjectConfig(BaseSettings):
     SERVER_APP: str = "backend_main:app"
     SERVER_HOST: str = ShellUtils.acquire_localhost()
     SERVER_SYSTEM: str = platform.system()
-    SERVER_PORT: int = 8518
+    SERVER_PORT: int = 8519
     SERVER_DEBUG: bool = SERVER_SYSTEM != "Linux"  # Windows | Linux | Darwin
     SERVER_DELAY: int = 5
 
@@ -133,7 +139,7 @@ class ProjectConfig(BaseSettings):
     ]
 
     # 应用注册
-    APPLICATIONS_MODULE: str = "backend.applications"
+    APPLICATIONS_MODULE: str = "applications"
     APPLICATIONS_INSTALLED: List[str] = FileUtils.get_all_dirs(
         abspath=APPLICATIONS_DIR,
         return_full_path=False,

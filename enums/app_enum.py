@@ -2,7 +2,7 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : app_enum.py
 @DateTime: 2025/1/16 16:15
 """

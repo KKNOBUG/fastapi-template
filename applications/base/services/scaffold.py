@@ -2,40 +2,44 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : scaffold.py
 @DateTime: 2025/1/18 10:48
 """
 import asyncio
-from decimal import Decimal
 from datetime import datetime, date, time
-from typing import Any, Dict, Generic, List, Tuple, Type, TypeVar, Union, Optional
+from decimal import Decimal
+from typing import Any, Dict, Generic, List, Tuple, Type, TypeVar, Union, Optional, Set
 
-from pydantic import BaseModel
-from tortoise.models import Model
-from tortoise.expressions import Q
+from pydantic import BaseModel, GetCoreSchemaHandler
+from pydantic_core import core_schema
 from tortoise import fields, models
+from tortoise.expressions import Q
+from tortoise.models import Model
 
-from configure.global_config import GLOBAL_CONFIG
+from configure import GLOBAL_CONFIG
 
 
 class ScaffoldModel(models.Model):
     id = fields.BigIntField(pk=True, description="主键")
 
-    async def to_dict(self,
-                      include_fields: Optional[List[str]] = None,
-                      exclude_fields: Optional[List[str]] = None,
-                      m2m: bool = False,
-                      m2m_include_fields: Optional[List[str]] = None,
-                      m2m_exclude_fields: Optional[List[str]] = None,
-                      fk: bool = False,
-                      fk_include_fields: Optional[List[str]] = None,
-                      fk_exclude_fields: Optional[List[str]] = None,
-                      ):
+    async def to_dict(
+            self,
+            include_fields: Optional[Union[List[str], Set[str]]] = None,
+            exclude_fields: Optional[Union[List[str], Set[str]]] = None,
+            replace_fields: Optional[Dict[str, str]] = None,
+            m2m: bool = False,
+            m2m_include_fields: Optional[Union[List[str], Set[str]]] = None,
+            m2m_exclude_fields: Optional[Union[List[str], Set[str]]] = None,
+            fk: bool = False,
+            fk_include_fields: Optional[Union[List[str], Set[str]]] = None,
+            fk_exclude_fields: Optional[Union[List[str], Set[str]]] = None,
+    ):
         """
         将模型实例转换为字典形式，支持灵活配置要包含或排除的字段，以及是否处理多对多关系和外键关系。
         :param include_fields: 需要引入的本表字段列表，默认为 None
         :param exclude_fields: 需要排除的本表字段列表，默认为 None
+        :param replace_fields: 需要别名的本表字段列表，默认为 None
         :param m2m: 是否获取多对多关系字段的数据，默认为 False
         :param m2m_include_fields: 需要引入的多对多表字段列表，默认为 None
         :param m2m_exclude_fields: 需要排除的多对多表字段列表，默认为 None
@@ -60,6 +64,8 @@ class ScaffoldModel(models.Model):
             if field in exclude_fields:
                 continue
             value = getattr(self, field)
+            if replace_fields:
+                field = replace_fields.get(field, field)
             d[field] = await self.__format_value(value)
 
         # 如果 fk 为 True，异步获取外键字段关联的数据
@@ -145,7 +151,7 @@ class ScaffoldModel(models.Model):
 
 
 class UUIDModel:
-    uuid = fields.UUIDField(unique=True, description="唯一标识符")
+    uid = fields.UUIDField(unique=True, description="唯一标识符")
 
 
 class PacketModel:
@@ -153,7 +159,7 @@ class PacketModel:
 
 
 class StateModel:
-    state = fields.SmallIntField(default=-1, index=True, description="状态")
+    state = fields.SmallIntField(default=0, index=True, description="状态(0:启用, 1:禁用)")
 
 
 class ClassModel:
@@ -168,8 +174,14 @@ class TimestampMixin:
 
 
 class MaintainMixin:
-    created_user = fields.CharField(max_length=16, default=None, null=True, description="创建人")
-    updated_user = fields.CharField(max_length=16, default=None, null=True, description="更新人")
+    created_user = fields.CharField(max_length=16, default=None, null=True, description="创建人员")
+    updated_user = fields.CharField(max_length=16, default=None, null=True, description="更新人员")
+
+
+class ReserveFields:
+    reserve_1 = fields.CharField(max_length=64, default=None, null=True, description="备用字段1")
+    reserve_2 = fields.CharField(max_length=128, default=None, null=True, description="备用字段2")
+    reserve_3 = fields.CharField(max_length=255, default=None, null=True, description="备用字段3")
 
 
 # 类型变量 ModelType，限定为继承自 Model 的类型
@@ -281,3 +293,45 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if obj:
             await obj.delete()
         return obj
+
+
+class UpperStr(str):
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+            cls,
+            source_type: Any,
+            handler: GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        return core_schema.with_info_after_validator_function(
+            cls._validate,
+            handler(str),
+            serialization=core_schema.to_string_ser_schema(),
+        )
+
+    @classmethod
+    def _validate(cls, v: str, info: Any) -> 'UpperStr':
+        if not isinstance(v, str):
+            raise ValueError("必须是字符串类型")
+        return cls(v.upper())
+
+
+class LowerStr(str):
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+            cls,
+            source_type: Any,
+            handler: GetCoreSchemaHandler,
+    ) -> core_schema.CoreSchema:
+        return core_schema.with_info_after_validator_function(
+            cls._validate,
+            handler(str),
+            serialization=core_schema.to_string_ser_schema(),
+        )
+
+    @classmethod
+    def _validate(cls, v: str, info: Any) -> 'LowerStr':
+        if not isinstance(v, str):
+            raise ValueError("必须是字符串类型")
+        return cls(v.lower())

@@ -13,7 +13,7 @@ from fastapi.exceptions import RequestValidationError, ResponseValidationError
 from starlette.exceptions import HTTPException
 from tortoise.exceptions import DoesNotExist
 
-from backend.core.responses import (
+from core.responses import (
     BaseResponse,
     ParameterResponse,
     ForbiddenResponse,

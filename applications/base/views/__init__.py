@@ -2,15 +2,16 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : KeenRunner Template
 @Module  : __init__.py
-@DateTime: 2025/4/28 18:07
+@DateTime: 2025/1/12 19:42
 """
+from fastapi import APIRouter
 
+from .auth_view import auth_public, auth_secure
 
-def print_hi(name):
-    print(f'Hi, {name}')
+base_public = APIRouter()
+base_secure = APIRouter()
 
-
-if __name__ == '__main__':
-    print_hi('Python')
+base_public.include_router(auth_public, prefix="/auth")
+base_secure.include_router(auth_secure, prefix="/auth")

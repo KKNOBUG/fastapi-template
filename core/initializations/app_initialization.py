@@ -2,40 +2,38 @@
 """
 @Author  : yangkai
 @Email   : 807440781@qq.com
-@Project : fastapi-template
+@Project : Krun
 @Module  : app_initialization.py
 @DateTime: 2025/1/17 21:55
 """
 import os
-import sys
 import shutil
-from datetime import datetime
+import sys
+import traceback
 from typing import Dict, Any
 
-from loguru import logger
+import tortoise.exceptions
 from aerich import Command
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError, ResponseValidationError
+from starlette.exceptions import HTTPException
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
-from starlette.exceptions import HTTPException
 from tortoise.contrib.fastapi import register_tortoise
 from tortoise.exceptions import DoesNotExist
 
-from configure.project_config import PROJECT_CONFIG
-from configure.logging_config import loguru_logging
+from configure import PROJECT_CONFIG, LOGGER
 from core.exceptions.http_exceptions import (
     request_validation_exception_handler,
     response_validation_exception_handler,
     http_exception_handler,
     null_point_exception_handler,
-    app_exception_handler
+    app_exception_handler,
 )
 from core.middlewares.app_middleware import logging_middleware
-
-
-def register_logging() -> logger:
-    return loguru_logging()
+from core.middlewares.auth_middleware import auth_middleware
+from core.middlewares.request_context_middleware import request_context_middleware
+from services import DependAuth
 
 
 async def register_database(app: FastAPI) -> None:
@@ -78,13 +76,27 @@ async def register_database(app: FastAPI) -> None:
 
     await command.init()
 
+    if not PROJECT_CONFIG.aerich_should_run_on_startup:
+        LOGGER.warning(
+            "跳过 Aerich 数据迁移指令: \n"
+            f"操作系统: {PROJECT_CONFIG.SERVER_SYSTEM}, \n"
+            f"调试开关: {PROJECT_CONFIG.SERVER_DEBUG}, \n"
+            f"迁移开关: {PROJECT_CONFIG.DATABASE_AUTO_MIGRATION}, \n"
+            f"生产环境(Linux操作系统)始终执行迁移指令, 不提供关闭选项; "
+            f"开发环境(Windows操作系统)仅当显示打开[DATABASE_AUTO_MIGRATION]时执行迁移指令。"
+        )
+        return
+
     # 生成迁移文件
     try:
-        await command.migrate(name=f"auto_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        await command.migrate(name="auto_migrate")
     except AttributeError as e:
-        print("无法从数据库中检索模型历史记录，模型历史记录将从头创建")
-        shutil.rmtree(PROJECT_CONFIG.MIGRATION_DIR)
-        await command.init_db(safe=True)
+        LOGGER.error(f"无法从数据库中检索模型历史记录, 请检查[migration]与[aerich]表记录是否一致: {e}\n错误回溯: {traceback.format_exc()}")
+        if PROJECT_CONFIG.aerich_should_run_on_startup:
+            shutil.rmtree(PROJECT_CONFIG.MIGRATION_DIR)
+            await command.init_db(safe=True)
+        else:
+            raise RuntimeError("数据库迁移元数据与本地[migration]不一致, 无法进行迁移, 请手工修复或从备份恢复后再启动应用")
 
     # 应用迁移
     await command.upgrade(run_in_transaction=True)
@@ -113,6 +125,21 @@ def register_exceptions(app: FastAPI) -> None:
         handler=null_point_exception_handler
     )
     # 当发生未被其他特定异常处理器处理的异常时，会触发此函数
+    app.add_exception_handler(IOError, app_exception_handler)
+    app.add_exception_handler(OSError, app_exception_handler)
+    app.add_exception_handler(KeyError, app_exception_handler)
+    app.add_exception_handler(ValueError, app_exception_handler)
+    app.add_exception_handler(IndexError, app_exception_handler)
+    app.add_exception_handler(TypeError, app_exception_handler)
+    app.add_exception_handler(MemoryError, app_exception_handler)
+    app.add_exception_handler(ImportError, app_exception_handler)
+    app.add_exception_handler(TimeoutError, app_exception_handler)
+    app.add_exception_handler(RuntimeError, app_exception_handler)
+    app.add_exception_handler(AttributeError, app_exception_handler)
+    app.add_exception_handler(FileExistsError, app_exception_handler)
+    app.add_exception_handler(FileNotFoundError, app_exception_handler)
+    app.add_exception_handler(NotADirectoryError, app_exception_handler)
+    app.add_exception_handler(tortoise.exceptions.BaseORMException, app_exception_handler)
     app.add_exception_handler(
         exc_class_or_status_code=Exception,
         handler=app_exception_handler
@@ -131,20 +158,40 @@ def register_middlewares(app: FastAPI):
         max_age=PROJECT_CONFIG.CORS_MAX_AGE,
     )
     # 注册 HTTP 请求中间件
+    app.middleware('http')(auth_middleware)
+    # 先做认证拦截，再做审计日志记录
     app.middleware('http')(logging_middleware)
+    # 后做日志追溯链
+    app.middleware('http')(request_context_middleware)
 
 
 def register_routers(app: FastAPI) -> None:
     # 挂载静态文件
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+    app.mount("/static", StaticFiles(directory=PROJECT_CONFIG.STATIC_DIR), name="static")
     app.openapi_version = PROJECT_CONFIG.APP_OPENAPI_VERSION
-    static_modules = sys.modules["fastapi.openapi.docs"].get_swagger_ui_html.__kwdefaults__
-    static_modules["swagger_js_url"] = PROJECT_CONFIG.APP_OPENAPI_JS_URL
-    static_modules["swagger_css_url"] = PROJECT_CONFIG.APP_OPENAPI_CSS_URL
-    static_modules["swagger_favicon_url"] = PROJECT_CONFIG.APP_OPENAPI_FAVICON_URL
+    swagger_modules = sys.modules["fastapi.openapi.docs"].get_swagger_ui_html.__kwdefaults__
+    swagger_modules["swagger_js_url"] = PROJECT_CONFIG.APP_OPENAPI_JS_URL
+    swagger_modules["swagger_css_url"] = PROJECT_CONFIG.APP_OPENAPI_CSS_URL
+    swagger_modules["swagger_favicon_url"] = PROJECT_CONFIG.APP_OPENAPI_FAVICON_URL
+    redoc_modules = sys.modules["fastapi.openapi.docs"].get_redoc_html.__kwdefaults__
+    redoc_modules["redoc_js_url"] = "/static/redoc/bundles/redoc.standalone.js"
+    redoc_modules["redoc_favicon_url"] = "/static/redoc/favicon.png"
 
     # 导入路由蓝图
-    from applications.base.views.routes_view import routers
+    from applications.base.views import base_public, base_secure
+    from applications.user.views.user_view import user
 
-    # 挂载路由蓝图
-    app.include_router(router=routers, prefix="/base", tags=["基础服务"])
+    # 挂在路由蓝图
+    app.include_router(router=base_public, prefix="/base", tags=["基础服务"])
+    app.include_router(
+        router=base_secure,
+        prefix="/base",
+        tags=["基础服务"],
+        dependencies=[DependAuth],
+    )
+    app.include_router(
+        router=user,
+        prefix="/user",
+        tags=["用户服务"],
+        dependencies=[DependAuth],
+    )

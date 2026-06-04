@@ -12,7 +12,7 @@ import orjson
 from fastapi.encoders import jsonable_encoder
 from starlette.responses import JSONResponse
 
-from backend.enums import Code, Status, Message
+from enums import Code, Status, Message
 
 
 class BaseResponse(JSONResponse):
