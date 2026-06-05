@@ -8,8 +8,8 @@
 """
 from fastapi import APIRouter
 
-from .auth_view import auth_public, auth_secure
 from .audit_view import audit
+from .auth_view import auth_public, auth_secure
 from .routes_view import routers
 
 base_public = APIRouter()

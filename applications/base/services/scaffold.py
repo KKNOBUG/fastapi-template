@@ -7,29 +7,30 @@
 @DateTime: 2025/1/18 10:48
 """
 import asyncio
-import datetime
 import uuid
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Generic, List, Tuple, Type, TypeVar, Union, Optional, Set
 
+from backend.configure import GLOBAL_CONFIG
+from backend.core.exceptions import ParameterException
 from pydantic import BaseModel, GetCoreSchemaHandler
 from pydantic_core import core_schema
 from tortoise import fields, models
+from tortoise.exceptions import FieldError
 from tortoise.expressions import Q
 from tortoise.models import Model
-
-from configure import GLOBAL_CONFIG
+from tortoise.queryset import QuerySet
 
 
 def unique_identify() -> str:
     """
     生成唯一标识字符串，由时间戳与 UUID 组合而成。
 
-    :returns: 格式为 ``{timestamp}-{uuid4_hex}`` 的唯一标识字符串。
+    :returns: 格式为 {timestamp}-{uuid4_hex} 的唯一标识字符串。
     :rtype: str
     """
-    timestamp: int = int(datetime.datetime.now().timestamp())
+    timestamp: int = int(datetime.now().timestamp())
     uuid4_str: str = uuid.uuid4().hex.upper()
     return f"{timestamp}-{uuid4_str}"
 
@@ -241,14 +242,17 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         return await self.model.filter(id=id, **kwargs).first()
 
-    async def get_by_conditions(self, only_one: bool = True, **kwargs) -> Optional[List[ModelType]]:
+    async def get_by_conditions(self, only_one: bool = True, **kwargs) -> Optional[Union[ModelType, List[ModelType]]]:
         """
         :param only_one: 为 True 时返回单条记录，否则返回列表。。
         :param kwargs: 要获取的对象的关键字。
         :return: 与 kwargs 对应的数据库对象，如果不存在会返回None。
         """
-        stmt = self.model.filter(**kwargs)
-        return await (stmt.first() if only_one else stmt.all())
+        try:
+            stmt: QuerySet = self.model.filter(**kwargs)
+            return await (stmt.first() if only_one else stmt.all())
+        except FieldError as e:
+            raise ParameterException(message=e.__str__()) from e
 
     async def list(
             self,
@@ -310,11 +314,11 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await obj.delete()
         return obj
 
-    async def delete(self, id: int) -> ModelType:
+    async def delete(self, id: int, **kwargs) -> ModelType:
         """
         :param id: 要删除的对象的唯一标识符。
         """
-        obj = await self.get_or_none(id=id)
+        obj = await self.get_or_none(id=id, **kwargs)
         if obj:
             await obj.delete()
         return obj
