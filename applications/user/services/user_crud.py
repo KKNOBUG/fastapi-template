@@ -7,7 +7,7 @@
 @DateTime: 2025/1/18 11:36
 """
 from datetime import datetime
-from typing import Optional, Union, List, Dict, Any
+from typing import Optional, Union, List
 
 from tortoise.exceptions import DoesNotExist
 
@@ -31,32 +31,38 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
     def __init__(self):
         super().__init__(model=User)
 
-    async def get_by_id(self, user_id: int, on_error: bool = False, is_active: bool = True) -> Optional[User]:
+    async def get_by_id(self, user_id: int, on_error: bool = True, **kwargs) -> Optional[User]:
         if not user_id:
             error_message: str = "查询用户信息失败, 参数(user_id)不允许为空"
             LOGGER.error(error_message)
             raise ParameterException(message=error_message)
-        kwargs: Dict[str, Any] = {"id": user_id}
-        if is_active:
-            kwargs["state__not"] = 1
-        instance = await self.model.filter(**kwargs).first()
+        instance = await self.get_or_none(id=user_id, **kwargs)
         if not instance and on_error:
             error_message: str = f"查询用户信息失败, 用户(id={user_id})不存在"
             LOGGER.error(error_message)
             raise NotFoundException(message=error_message)
         return instance
 
-    async def get_by_username(self, username: str, on_error: bool = False, is_active: bool = True) -> Optional[User]:
+    async def get_by_username(self, username: str, on_error: bool = True, **kwargs) -> Optional[User]:
         if not username:
             error_message: str = "查询用户信息失败, 参数(username)不允许为空"
             LOGGER.error(error_message)
             raise ParameterException(message=error_message)
-        kwargs: Dict[str, Any] = {"username": username}
-        if is_active:
-            kwargs["state__not"] = 1
-        instance = await self.model.filter(**kwargs).first()
+        instance = await self.model.filter(username=username, **kwargs).first()
         if not instance and on_error:
             error_message: str = f"查询用户信息失败, 用户(username={username})不存在"
+            LOGGER.error(error_message)
+            raise NotFoundException(message=error_message)
+        return instance
+
+    async def get_by_alias(self, alias: str, on_error: bool = True, **kwargs) -> Optional[List[User]]:
+        if not alias:
+            error_message: str = "查询用户信息失败, 参数(alias)不允许为空"
+            LOGGER.error(error_message)
+            raise ParameterException(message=error_message)
+        instance = await self.model.filter(alias=alias, **kwargs).all()
+        if not instance and on_error:
+            error_message: str = f"查询用户信息失败, 用户(alias={alias})不存在"
             LOGGER.error(error_message)
             raise NotFoundException(message=error_message)
         return instance
@@ -69,7 +75,7 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
         if not verified:
             raise NotFoundException(message="用户名或密码错误")
         if user.state == 1:
-            raise NoPermissionException(message="用户已禁用")
+            raise NoPermissionException(message="用户待岗或已离职")
         return user
 
     async def update_last_login(self, id: int) -> None:
@@ -79,20 +85,21 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
 
     async def create_user(self, user_in: UserCreate) -> User:
         username = user_in.username
-        instances = await self.model.filter(username=username).all()
+        instances = await self.model.filter(username=username, state__not=1).first()
         if instances:
             raise DataAlreadyExistsException(message=f"用户(username={username})信息已存在")
 
         user_in.password = get_password_hash(password=user_in.password)
-        return await self.create(user_in)
+        instance = await self.create(user_in)
+        return instance
 
-    async def delete_user(self, user_id: int) -> User:
-        instance = await self.query(user_id)
-        if not instance or instance.state != 0:
+    async def delete_user(self, user_id: int, **kwargs) -> User:
+        instance = await self.model.filter(id=user_id, **kwargs).first()
+        if not instance:
             raise NotFoundException(message=f"用户(id={user_id})信息不存在")
 
         instance.state = 1
-        instance.is_active = False
+        instance.is_active = 0
         await instance.save()
         return instance
 
@@ -107,22 +114,28 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
         return deleted_ids
 
     async def update_user(self, user_in: UserUpdate) -> User:
-        user_id: int = user_in.user_id
-        user_if: dict = user_in.model_dump(exclude_unset=True, exclude_none=True)
+        user_id: int = user_in.id
+        user_if: dict = {
+            key: value for key, value in user_in.items()
+            if value is not None
+        }
         try:
             instance = await self.update(id=user_id, obj_in=user_if)
-        except DoesNotExist:
+        except DoesNotExist as e:
             raise NotFoundException(message=f"用户(id={user_id})信息不存在")
-        return instance
+
+        data = await instance.to_dict()
+        return data
 
     async def reset_password(self, user_id: int):
-        instance = await self.get(id=user_id)
+        instance = await self.get_by_id(user_id=user_id, on_error=True)
         if instance.is_superuser:
             return ForbiddenResponse(message="不允许重置超级用户密码")
 
         instance.password = get_password_hash(password="123456")
         await instance.save()
-        return await instance.to_dict(exclude_fields=["id", "password"])
+        data = await instance.to_dict(exclude_fields=["id", "password"])
+        return data
 
 
 USER_CRUD = UserCrud()

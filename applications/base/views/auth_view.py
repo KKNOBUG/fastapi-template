@@ -65,6 +65,6 @@ async def get_login_access_token(credentials: CredentialsSchema):
 @auth_secure.post("/userinfo", summary="查看用户信息", dependencies=[DependAuth])
 async def get_userinfo():
     user_id = CTX_USER_ID.get()
-    user_obj = await USER_CRUD.get(id=user_id)
+    user_obj = await USER_CRUD.get_or_error(id=user_id)
     data = await user_obj.to_dict(exclude_fields=["password"])
     return SuccessResponse(data=data)

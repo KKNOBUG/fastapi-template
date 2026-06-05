@@ -20,7 +20,7 @@ from applications.user.schemas.user_schema import (
 )
 from applications.user.services.user_crud import USER_CRUD
 from configure import LOGGER
-from core.exceptions import DataAlreadyExistsException, NotFoundException
+from core.exceptions import DataAlreadyExistsException, NotFoundException, ParameterException
 from core.responses import (
     NotFoundResponse,
     SuccessResponse,
@@ -83,20 +83,26 @@ async def update_user(user_in: UserUpdate = Body(..., description="用户信息"
 
 @user_secure.get("/get", summary="查询用户信息", description="根据id查询用户信息")
 async def get_user(user_id: int = Query(..., description="用户ID")):
-    instance = await USER_CRUD.get_by_id(user_id=user_id)
-    if not instance:
-        return NotFoundResponse(message=f"用户(id={user_id})信息不存在")
-    data: dict = await instance.to_dict(exclude_fields=["password"])
-    return SuccessResponse(data=data)
+    try:
+        instance = await USER_CRUD.get_by_id(user_id=user_id, on_error=True)
+        data: dict = await instance.to_dict(exclude_fields=["password"])
+        return SuccessResponse(data=data)
+    except ParameterException as e:
+        return FailureResponse(message=e.message)
+    except NotFoundException as e:
+        return NotFoundResponse(message=e.message)
 
 
 @user_secure.get("/byUsername", summary="查询用户信息", description="根据用户名查询用户信息")
 async def get_user_by_username(username: str = Query(..., description="用户名称")):
-    instance = await USER_CRUD.get_by_username(username=username)
-    if not instance:
-        return NotFoundResponse(message=f"用户(username={username})信息不存在")
-    data: dict = await instance.to_dict(exclude_fields=["password"])
-    return SuccessResponse(data=data)
+    try:
+        instance = await USER_CRUD.get_by_username(username=username, on_error=True)
+        data: dict = await instance.to_dict(exclude_fields=["password"])
+        return SuccessResponse(data=data)
+    except ParameterException as e:
+        return FailureResponse(message=e.message)
+    except NotFoundException as e:
+        return NotFoundResponse(message=e.message)
 
 
 @user_secure.get("/list", summary="查询用户列表", description="支持分页按条件查询用户列表信息（Query）")
@@ -168,7 +174,10 @@ async def get_users(user_in: UserSelect = Body()):
     else:
         q &= Q(state=0)
     total, instances = await USER_CRUD.list(
-        page=user_in.page, page_size=user_in.page_size, search=q, order=user_in.order
+        page=user_in.page,
+        page_size=user_in.page_size,
+        search=q,
+        order=user_in.order
     )
     data = [await obj.to_dict(exclude_fields=["password"]) for obj in instances]
     return SuccessResponse(data=data, total=total)
@@ -177,7 +186,12 @@ async def get_users(user_in: UserSelect = Body()):
 @user_secure.post("/update_password", summary="修改密码", dependencies=[DependAuth])
 async def update_user_password(req_in: UpdatePassword):
     user_id = CTX_USER_ID.get()
-    instance = await USER_CRUD.get(user_id)
+    try:
+        instance = await USER_CRUD.get_by_id(user_id, on_error=True)
+    except ParameterException as e:
+        return FailureResponse(message=e.message)
+    except NotFoundException as e:
+        return NotFoundResponse(message=e.message)
     verified = verify_password(req_in.old_password, instance.password)
     if not verified:
         return FailureResponse(message="旧密码验证错误")

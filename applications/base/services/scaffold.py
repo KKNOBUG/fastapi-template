@@ -227,29 +227,37 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         self.model = model
 
-    async def get(self, id: int) -> ModelType:
+    async def get_or_error(self, id: int) -> ModelType:
         """
         :param id: 要获取的对象的唯一标识符。
         :return: 与 ID 对应的数据库对象，如果不存在可能会抛出异常。
         """
         return await self.model.get(id=id)
 
-    async def query(self, id: int) -> Optional[ModelType]:
+    async def get_or_none(self, id: int, **kwargs) -> Optional[ModelType]:
         """
         :param id: 要获取的对象的唯一标识符。
         :return: 与 ID 对应的数据库对象，如果不存在会返回None。
         """
-        return await self.model.filter(id=id).first()
+        return await self.model.filter(id=id, **kwargs).first()
 
-    async def select(self, **kwargs) -> Optional[List[ModelType]]:
+    async def get_by_conditions(self, only_one: bool = True, **kwargs) -> Optional[List[ModelType]]:
         """
+        :param only_one: 为 True 时返回单条记录，否则返回列表。。
         :param kwargs: 要获取的对象的关键字。
         :return: 与 kwargs 对应的数据库对象，如果不存在会返回None。
         """
-        return await self.model.filter(**kwargs).all()
+        stmt = self.model.filter(**kwargs)
+        return await (stmt.first() if only_one else stmt.all())
 
-    async def list(self, page: int, page_size: int, search: Q = Q(),
-                   order: Optional[list] = None, related: Optional[list] = None) -> Tuple[int, List[ModelType]]:
+    async def list(
+            self,
+            page: int,
+            page_size: int,
+            search: Q = Q(),
+            order: Optional[list] = None,
+            related: Optional[list] = None
+    ) -> Tuple[int, List[ModelType]]:
         """
         :param page: 页码，从 1 开始。
         :param page_size: 每页的对象数量。
@@ -261,8 +269,10 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         order: list = order or []
         related: list = related or []
         query = self.model.filter(search)
-        return await query.count(), await query.offset((page - 1) * page_size).limit(page_size).order_by(
-            *order).prefetch_related(*related)
+        return (
+            await query.count(),
+            await query.offset((page - 1) * page_size).limit(page_size).order_by(*order).prefetch_related(*related)
+        )
 
     async def create(self, obj_in: Union[CreateSchemaType, Dict]) -> ModelType:
         """
@@ -283,7 +293,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         :param obj_in: 用于更新对象的数据，可以是 UpdateSchemaType 实例或字典。
         :return: 更新后的数据库对象。
         """
-        obj = await self.get(id=id)
+        obj = await self.get_or_error(id=id)
         if isinstance(obj_in, Dict):
             obj_dict = obj_in
         else:
@@ -296,7 +306,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         :param id: 要删除的对象的唯一标识符（如果不存在可能会抛出异常）。
         """
-        obj = await self.get(id=id)
+        obj = await self.get_or_error(id=id)
         await obj.delete()
         return obj
 
@@ -304,7 +314,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         :param id: 要删除的对象的唯一标识符。
         """
-        obj = await self.model.filter(id=id).first()
+        obj = await self.get_or_none(id=id)
         if obj:
             await obj.delete()
         return obj
