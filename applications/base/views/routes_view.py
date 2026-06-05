@@ -11,9 +11,10 @@ from fastapi import APIRouter
 from fastapi.routing import APIRoute
 from starlette.requests import Request
 
-from core.responses.http_response import (SuccessResponse)
+from core.responses.http_response import SuccessResponse
+from services import DependAuth
 
-routers = APIRouter()
+routers = APIRouter(dependencies=[DependAuth])
 
 
 @routers.post("/routers", summary="查询路由列表", description="查询项目中所有的APIRouter信息")

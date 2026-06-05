@@ -6,11 +6,12 @@
 @Module  : __init__.py
 @DateTime: 2025/4/28 18:07
 """
+from fastapi import APIRouter
 
+from .user_view import user_public, user_secure
 
-def print_hi(name):
-    print(f'Hi, {name}')
+user_public_router = APIRouter()
+user_secure_router = APIRouter()
 
-
-if __name__ == '__main__':
-    print_hi('Python')
+user_public_router.include_router(user_public)
+user_secure_router.include_router(user_secure)

@@ -16,8 +16,9 @@ from applications.base.schemas.audit_schema import AuditBatchDelete, AuditSelect
 from applications.base.services.audit_crud import AUDIT_CRUD
 from configure import LOGGER
 from core.responses import FailureResponse, SuccessResponse
+from services import DependAuth
 
-audit = APIRouter()
+audit = APIRouter(dependencies=[DependAuth])
 
 
 @audit.get("/list", summary="查看操作日志", description="支持分页按条件查询审计日志列表信息（Query）")

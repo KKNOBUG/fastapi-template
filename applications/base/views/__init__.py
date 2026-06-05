@@ -9,9 +9,13 @@
 from fastapi import APIRouter
 
 from .auth_view import auth_public, auth_secure
+from .audit_view import audit
+from .routes_view import routers
 
 base_public = APIRouter()
 base_secure = APIRouter()
 
 base_public.include_router(auth_public, prefix="/auth")
 base_secure.include_router(auth_secure, prefix="/auth")
+base_secure.include_router(audit, prefix="/audit")
+base_secure.include_router(routers, prefix="/routes")
