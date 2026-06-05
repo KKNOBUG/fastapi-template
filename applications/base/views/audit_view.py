@@ -12,7 +12,7 @@ from fastapi import APIRouter, Body, Query
 from tortoise.expressions import Q
 
 from applications.base.models.audit_model import Audit
-from applications.base.schemas.audit_schema import AuditBatchDelete
+from applications.base.schemas.audit_schema import AuditBatchDelete, AuditSelect
 from applications.base.services.audit_crud import AUDIT_CRUD
 from configure import LOGGER
 from core.responses import FailureResponse, SuccessResponse
@@ -20,18 +20,18 @@ from core.responses import FailureResponse, SuccessResponse
 audit = APIRouter()
 
 
-@audit.get("/list", summary="查看操作日志")
+@audit.get("/list", summary="查看操作日志", description="支持分页按条件查询审计日志列表信息（Query）")
 async def list_audit(
         page: int = Query(default=1, ge=1, description="页码"),
         page_size: int = Query(default=10, ge=10, description="每页数量"),
-        username: str = Query(default="", description="用户名称"),
-        request_tags: str = Query(default="", description="请求模块"),
-        request_summary: str = Query(default="", description="请求接口"),
-        request_method: str = Query(default="", description="请求方式"),
-        request_router: str = Query(default="", description="请求路由"),
-        response_code: str = Query(default="", description="响应代码"),
-        start_time: str = Query(default="", description="开始时间"),
-        end_time: str = Query(default="", description="结束时间"),
+        username: str = Query(default=None, description="用户名称"),
+        request_tags: str = Query(default=None, description="请求模块"),
+        request_summary: str = Query(default=None, description="请求接口"),
+        request_method: str = Query(default=None, description="请求方式"),
+        request_router: str = Query(default=None, description="请求路由"),
+        response_code: str = Query(default=None, description="响应代码"),
+        start_time: str = Query(default=None, description="开始时间"),
+        end_time: str = Query(default=None, description="结束时间"),
 ):
     q = Q()
     if username:
@@ -54,6 +54,34 @@ async def list_audit(
         q &= Q(created_time__lte=end_time)
 
     audit_log_objs = await Audit.filter(q).offset((page - 1) * page_size).limit(page_size).order_by("-created_time")
+    total = await Audit.filter(q).count()
+    data = [await audit_log.to_dict() for audit_log in audit_log_objs]
+    return SuccessResponse(data=data, total=total)
+
+
+@audit.post("/search", summary="查询操作日志", description="支持分页按条件查询审计日志列表信息（Body）")
+async def search_audit(user_in: AuditSelect = Body()):
+    q = Q()
+    if user_in.username:
+        q &= Q(username__icontains=user_in.username)
+    if user_in.request_tags:
+        q &= Q(request_tags__icontains=user_in.request_tags)
+    if user_in.request_summary:
+        q &= Q(request_summary__icontains=user_in.request_summary)
+    if user_in.request_method:
+        q &= Q(request_method__icontains=user_in.request_method)
+    if user_in.request_router:
+        q &= Q(request_router__icontains=user_in.request_router)
+    if user_in.response_code:
+        q &= Q(response_code__icontains=user_in.response_code)
+    if user_in.start_time and user_in.end_time:
+        q &= Q(created_time__range=[user_in.start_time, user_in.end_time])
+    elif user_in.start_time:
+        q &= Q(created_time__gte=user_in.start_time)
+    elif user_in.end_time:
+        q &= Q(created_time__lte=user_in.end_time)
+
+    audit_log_objs = await Audit.filter(q).offset((user_in.page - 1) * user_in.page_size).limit(user_in.page_size).order_by(*user_in.order or ["-created_time"])
     total = await Audit.filter(q).count()
     data = [await audit_log.to_dict() for audit_log in audit_log_objs]
     return SuccessResponse(data=data, total=total)
