@@ -78,18 +78,17 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
         await user.save()
 
     async def create_user(self, user_in: UserCreate) -> User:
-        email = user_in.email
         username = user_in.username
-        instances = await self.model.filter(email=email, username=username).all()
+        instances = await self.model.filter(username=username).all()
         if instances:
-            raise DataAlreadyExistsException(message=f"用户(email={email},username={username})信息已存在")
+            raise DataAlreadyExistsException(message=f"用户(username={username})信息已存在")
 
         user_in.password = get_password_hash(password=user_in.password)
         return await self.create(user_in)
 
     async def delete_user(self, user_id: int) -> User:
         instance = await self.query(user_id)
-        if not instance:
+        if not instance or instance.state != 0:
             raise NotFoundException(message=f"用户(id={user_id})信息不存在")
 
         instance.state = 1
@@ -97,20 +96,19 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
         await instance.save()
         return instance
 
-    async def delete_users(self, user_in: UserBatchDelete) -> int:
+    async def delete_users(self, user_in: UserBatchDelete) -> Optional[List[int]]:
         user_ids: Optional[List[int]] = user_in.user_ids
         if user_ids:
-            count = await self.model.filter(id__in=user_ids).update(state=1)
+            deleted_ids = await self.model.filter(id__in=user_ids).exclude(state=1).values_list("id", flat=True)
+            if deleted_ids:
+                await self.model.filter(id__in=deleted_ids).update(state=1)
         else:
-            count = 0
-        return count
+            deleted_ids = None
+        return deleted_ids
 
     async def update_user(self, user_in: UserUpdate) -> User:
-        user_id: int = user_in.id
-        user_if: dict = {
-            key: value for key, value in user_in.model_dump(exclude_unset=True).items()
-            if value is not None and key != "id"
-        }
+        user_id: int = user_in.user_id
+        user_if: dict = user_in.model_dump(exclude_unset=True, exclude_none=True)
         try:
             instance = await self.update(id=user_id, obj_in=user_if)
         except DoesNotExist:

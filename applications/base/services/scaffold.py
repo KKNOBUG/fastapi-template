@@ -7,7 +7,9 @@
 @DateTime: 2025/1/18 10:48
 """
 import asyncio
-from datetime import datetime, date, time
+import datetime
+import uuid
+from datetime import datetime, date, time, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Generic, List, Tuple, Type, TypeVar, Union, Optional, Set
 
@@ -18,6 +20,18 @@ from tortoise.expressions import Q
 from tortoise.models import Model
 
 from configure import GLOBAL_CONFIG
+
+
+def unique_identify() -> str:
+    """
+    生成唯一标识字符串，由时间戳与 UUID 组合而成。
+
+    :returns: 格式为 ``{timestamp}-{uuid4_hex}`` 的唯一标识字符串。
+    :rtype: str
+    """
+    timestamp: int = int(datetime.datetime.now().timestamp())
+    uuid4_str: str = uuid.uuid4().hex.upper()
+    return f"{timestamp}-{uuid4_str}"
 
 
 class ScaffoldModel(models.Model):
@@ -94,7 +108,9 @@ class ScaffoldModel(models.Model):
 
     @classmethod
     async def __format_value(cls, value: Any):
-        if isinstance(value, datetime):
+        if isinstance(value, Decimal):
+            return str(value)
+        elif isinstance(value, datetime):
             value = value.strftime(GLOBAL_CONFIG.DATETIME_FORMAT2)
         elif isinstance(value, date):
             value = value.strftime(GLOBAL_CONFIG.DATE_FORMAT)
@@ -102,9 +118,8 @@ class ScaffoldModel(models.Model):
             value = value.strftime(GLOBAL_CONFIG.TIME_FORMAT)
         elif isinstance(value, bytes):
             value = value.decode("utf-8")
-        elif isinstance(value, Decimal):
-            value = float(value)
-
+        elif isinstance(value, timedelta):
+            value = str(value)
         return value
 
     async def __fetch_fk_field(self, field, fk_include_fields, fk_exclude_fields):

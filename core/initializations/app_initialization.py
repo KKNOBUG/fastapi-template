@@ -179,7 +179,7 @@ def register_routers(app: FastAPI) -> None:
 
     # 导入路由蓝图
     from applications.base.views import base_public, base_secure
-    from applications.user.views.user_view import user
+    from applications.user.views.user_view import user_public, user_secure
 
     # 挂在路由蓝图
     app.include_router(router=base_public, prefix="/base", tags=["基础服务"])
@@ -189,8 +189,9 @@ def register_routers(app: FastAPI) -> None:
         tags=["基础服务"],
         dependencies=[DependAuth],
     )
+    app.include_router(router=user_public, prefix="/user", tags=["用户服务"])
     app.include_router(
-        router=user,
+        router=user_secure,
         prefix="/user",
         tags=["用户服务"],
         dependencies=[DependAuth],
