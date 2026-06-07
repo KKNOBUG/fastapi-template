@@ -317,7 +317,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await obj.save()
         return obj
 
-    async def delete(self, id: int, **kwargs) -> ModelType:
+    async def remove_or_error(self, id: int, **kwargs) -> ModelType:
         """
         :param id: 要删除的对象的唯一标识符（如果不存在可能会抛出异常）。
         """
@@ -351,7 +351,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         LOGGER.info(f"软删除成功: {self.model.__name__}(id={id})")
         return obj
 
-    async def soft_delete_batch(self, ids: List[int], updated_user: Optional[str] = None, **kwargs) -> int:
+    async def soft_delete_batch(self, ids: List[int], updated_user: Optional[str] = None) -> int:
         """
         批量软删除（state=1）。
 
@@ -453,7 +453,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         q = Q(state=1) & search
         return await self.list(page=page, page_size=page_size, search=q, order=order or ["-updated_time"])
 
-    async def hard_delete(self, id: int, **kwargs) -> ModelType:
+    async def hard_delete(self, id: int) -> ModelType:
         """
         硬删除：从数据库中永久移除记录（包括已软删除的记录）。
 
@@ -461,7 +461,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         :return: 被删除的数据库对象。
         :raises NotFoundException: 对象不存在时抛出。
         """
-        obj = await self.get_or_none(id=id, **kwargs)
+        obj = await self.get_or_none(id=id)
         if obj:
             await obj.delete()
         await obj.delete()
