@@ -67,6 +67,7 @@ class ScaffoldModel(models.Model):
         - 使用 _cache 参数传入缓存字典，避免同一请求中重复查询关联对象
         - 缓存键格式：{instance_id: {field_name: value}}
         - 适用于列表查询时多个对象共享关联数据的场景
+        - 缓存仅在单次 to_dict 调用链中有效，不会持久化
 
         :param include_fields: 需要引入的本表字段列表，默认为 None（表示包含所有字段）
         :param exclude_fields: 需要排除的本表字段列表，默认为 None
