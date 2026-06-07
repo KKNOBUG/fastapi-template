@@ -18,6 +18,7 @@ from pydantic_core import core_schema
 from tortoise import fields, models
 from tortoise.exceptions import FieldError
 from tortoise.expressions import Q
+from tortoise.functions import Sum, Avg, Max, Min, Count
 from tortoise.models import Model
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
@@ -418,6 +419,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             obj_dict = obj_in.model_dump(exclude_unset=True, exclude={"id"})
         obj = obj.update_from_dict(obj_dict)
         await obj.save()
+        LOGGER.info(f"更新成功: {self.model.__name__}(id={id}), 字段: {list(obj_dict.keys())}")
         return obj
 
     # ==================== 删除方法（物理删除） ====================
@@ -461,6 +463,197 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         LOGGER.info(f"批量硬删除成功: {self.model.__name__}, 数量={count}, ids={ids}")
         return count
 
+    # ==================== 查询构建器 ====================
+
+    def query(self) -> 'QueryBuilder[ModelType]':
+        """
+        获取查询构建器，支持链式调用构建复杂查询。
+
+        使用示例：
+            # 链式查询
+            results = await crud.query().filter(age__gte=18).exclude(state=1).order_by("-created_time").limit(10).all()
+
+            # 分页查询
+            total, items = await crud.query().filter(is_active=True).paginate(page=1, page_size=20)
+
+            # 条件组合
+            results = await crud.query().filter(
+                Q(name__contains="张") | Q(email__contains="zhang")
+            ).filter(state=0).all()
+
+        :return: 查询构建器实例
+        """
+        return QueryBuilder(self.model)
+
+    # ==================== 统计聚合方法 ====================
+
+    async def count(self, search: Q = Q()) -> int:
+        """
+        统计记录数量。
+
+        :param search: 搜索条件
+        :return: 记录数量
+        """
+        return await self.model.filter(search).count()
+
+    async def exists(self, **kwargs) -> bool:
+        """
+        检查是否存在符合条件的记录。
+
+        :param kwargs: 查询条件
+        :return: 是否存在
+        """
+        return await self.model.filter(**kwargs).exists()
+
+    async def aggregate(
+            self,
+            search: Q = Q(),
+            **aggregations
+    ) -> Dict[str, Any]:
+        """
+        聚合查询，支持 sum/avg/max/min/count。
+
+        使用示例：
+            result = await crud.aggregate(
+                Q(state=0),
+                total_balance=Sum("balance"),
+                avg_age=Avg("age"),
+                max_score=Max("score"),
+                min_score=Min("score"),
+                user_count=Count("id")
+            )
+            # 返回: {"total_balance": 10000, "avg_age": 25.5, "max_score": 100, "min_score": 0, "user_count": 100}
+
+        :param search: 搜索条件
+        :param aggregations: 聚合函数字典
+        :return: 聚合结果字典
+        """
+
+        query = self.model.filter(search)
+        result = await query.annotate(**aggregations).first()
+
+        if result:
+            return {
+                key: getattr(result, key)
+                for key in aggregations.keys()
+            }
+        return {key: None for key in aggregations.keys()}
+
+    async def group_by(
+            self,
+            field: str,
+            search: Q = Q(),
+            **aggregations
+    ) -> List[Dict[str, Any]]:
+        """
+        分组统计查询。
+
+        使用示例：
+            results = await crud.group_by(
+                "gender",
+                Q(state=0),
+                count=Count("id"),
+                avg_age=Avg("age")
+            )
+            # 返回: [
+            #     {"gender": 1, "count": 50, "avg_age": 26},
+            #     {"gender": 2, "count": 45, "avg_age": 24}
+            # ]
+
+        :param field: 分组字段
+        :param search: 搜索条件
+        :param aggregations: 聚合函数字典
+        :return: 分组统计结果列表
+        """
+
+        query = self.model.filter(search).group_by(field)
+        results = await query.annotate(**aggregations).values(field, *aggregations.keys())
+
+        return results
+
+    # ==================== 批量操作方法 ====================
+
+    async def batch_create(self, obj_list: List[Union[CreateSchemaType, Dict]]) -> List[ModelType]:
+        """
+        批量创建记录。
+
+        :param obj_list: 创建数据列表，每个元素可以是 Pydantic Schema 实例或字典
+        :return: 创建成功的数据库对象列表
+        """
+        if not obj_list:
+            return []
+
+        instances = []
+        for obj_in in obj_list:
+            if isinstance(obj_in, Dict):
+                obj_dict = obj_in
+            else:
+                obj_dict = obj_in.model_dump(warnings=False)
+            obj = self.model(**obj_dict)
+            await obj.save()
+            instances.append(obj)
+
+        LOGGER.info(f"批量创建成功: {self.model.__name__}, 数量={len(instances)}")
+        return instances
+
+    async def batch_update(
+            self,
+            updates: List[Dict[str, Any]],
+            key_field: str = "id",
+            strict: bool = True
+    ) -> int:
+        """
+        批量更新记录。
+
+        :param updates: 更新数据列表，每个元素必须包含 key_field 指定的字段
+        :param key_field: 作为更新条件的字段名，默认为 "id"
+        :param strict: 是否严格校验字段
+        :return: 实际更新的记录数
+
+        使用示例：
+            await crud.batch_update([
+                {"id": 1, "name": "张三", "age": 20},
+                {"id": 2, "name": "李四", "age": 25},
+            ])
+        """
+        if not updates:
+            return 0
+
+        # 获取模型有效字段列表
+        valid_fields = set(self.model._meta.db_fields)
+        valid_fields.update(self.model._meta.fk_fields)
+
+        total_updated = 0
+        for update_data in updates:
+            key_value = update_data.get(key_field)
+            if not key_value:
+                LOGGER.warning(f"批量更新跳过: 缺少{key_field}字段")
+                continue
+
+            # 移除条件字段
+            update_dict = {k: v for k, v in update_data.items() if k != key_field}
+
+            # 校验字段
+            invalid_fields = set(update_dict.keys()) - valid_fields
+            if invalid_fields:
+                if strict:
+                    LOGGER.error(f"批量更新跳过(id={key_value}): 包含不存在的字段: {invalid_fields}")
+                    continue
+                else:
+                    LOGGER.warning(f"批量更新忽略字段(id={key_value}): {invalid_fields}")
+                    for field in invalid_fields:
+                        update_dict.pop(field, None)
+
+            if not update_dict:
+                continue
+
+            # 执行更新
+            count = await self.model.filter(**{key_field: key_value}).update(**update_dict)
+            total_updated += count
+
+        LOGGER.info(f"批量更新成功: {self.model.__name__}, 数量={total_updated}")
+        return total_updated
+
     # ==================== 事务支持方法 ====================
 
     @staticmethod
@@ -481,6 +674,8 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         async def wrapper(*args, **kwargs):
             async with in_transaction() as connection:
+                # 将 connection 注入 kwargs，供被装饰函数使用
+                kwargs['_connection'] = connection
                 return await func(*args, **kwargs)
 
         return wrapper
@@ -687,6 +882,154 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         count = await self.model.filter(id__in=ids, state=1).update(**update_fields)
         LOGGER.info(f"批量恢复成功: {self.model.__name__}, 数量={count}, ids={ids}")
         return count
+
+
+class QueryBuilder(Generic[ModelType]):
+    """
+    查询构建器，支持链式调用构建复杂查询。
+
+    使用示例：
+        # 基础查询
+        results = await crud.query().filter(age__gte=18).all()
+
+        # 链式条件
+        results = await crud.query().filter(state=0).exclude(is_deleted=True).order_by("-created_time").limit(10).all()
+
+        # 分页
+        total, items = await crud.query().filter(is_active=True).paginate(page=1, page_size=20)
+
+        # 预加载关联
+        results = await crud.query().prefetch("roles", "permissions").all()
+
+        # 安全复用（使用 clone）
+        base = crud.query().filter(state=0)
+        active_users = await base.clone().filter(is_active=True).all()
+        inactive_users = await base.clone().filter(is_active=False).all()
+    """
+
+    def __init__(self, model: Type[ModelType]):
+        self.model = model
+        self._query = model.filter()
+        self._filters: List[Q] = []
+        self._excludes: List[Q] = []
+        self._order_by: List[str] = []
+        self._offset: Optional[int] = None
+        self._limit: Optional[int] = None
+        self._prefetch: List[str] = []
+
+    def clone(self) -> 'QueryBuilder[ModelType]':
+        """
+        克隆当前查询构建器，创建独立副本。
+
+        用于安全复用基础查询条件，避免状态污染。
+
+        :return: 新的 QueryBuilder 实例，复制当前所有条件
+        """
+        new_builder = QueryBuilder(self.model)
+        new_builder._filters = self._filters.copy()
+        new_builder._excludes = self._excludes.copy()
+        new_builder._order_by = self._order_by.copy()
+        new_builder._offset = self._offset
+        new_builder._limit = self._limit
+        new_builder._prefetch = self._prefetch.copy()
+        return new_builder
+
+    def filter(self, *args, **kwargs) -> 'QueryBuilder[ModelType]':
+        """添加过滤条件"""
+        if args:
+            self._filters.extend(args)
+        if kwargs:
+            self._filters.append(Q(**kwargs))
+        return self
+
+    def exclude(self, *args, **kwargs) -> 'QueryBuilder[ModelType]':
+        """添加排除条件"""
+        if args:
+            self._excludes.extend(args)
+        if kwargs:
+            self._excludes.append(Q(**kwargs))
+        return self
+
+    def order_by(self, *fields: str) -> 'QueryBuilder[ModelType]':
+        """添加排序字段"""
+        self._order_by.extend(fields)
+        return self
+
+    def offset(self, offset: int) -> 'QueryBuilder[ModelType]':
+        """设置偏移量"""
+        self._offset = offset
+        return self
+
+    def limit(self, limit: int) -> 'QueryBuilder[ModelType]':
+        """设置限制数量"""
+        self._limit = limit
+        return self
+
+    def prefetch(self, *fields: str) -> 'QueryBuilder[ModelType]':
+        """预加载关联字段"""
+        self._prefetch.extend(fields)
+        return self
+
+    def _build_query(self) -> QuerySet:
+        """构建最终查询"""
+        query = self.model.filter()
+
+        # 应用过滤条件
+        for f in self._filters:
+            query = query.filter(f)
+
+        # 应用排除条件
+        for e in self._excludes:
+            query = query.exclude(e)
+
+        # 应用排序
+        if self._order_by:
+            query = query.order_by(*self._order_by)
+
+        # 应用分页
+        if self._offset is not None:
+            query = query.offset(self._offset)
+        if self._limit is not None:
+            query = query.limit(self._limit)
+
+        # 应用预加载
+        if self._prefetch:
+            query = query.prefetch_related(*self._prefetch)
+
+        return query
+
+    async def all(self) -> List[ModelType]:
+        """执行查询，返回所有结果"""
+        return await self._build_query().all()
+
+    async def first(self) -> Optional[ModelType]:
+        """执行查询，返回第一条结果"""
+        return await self._build_query().first()
+
+    async def count(self) -> int:
+        """统计数量"""
+        return await self._build_query().count()
+
+    async def paginate(self, page: int = 1, page_size: int = 10) -> Tuple[int, List[ModelType]]:
+        """
+        分页查询。
+
+        :param page: 页码，从 1 开始
+        :param page_size: 每页数量
+        :return: (总记录数, 当前页记录列表)
+        """
+        query = self._build_query()
+        total = await query.count()
+
+        self._offset = (page - 1) * page_size
+        self._limit = page_size
+        items = await self._build_query().all()
+
+        return total, items
+
+    async def exists(self) -> bool:
+        """检查是否存在"""
+        return await self._build_query().exists()
 
 
 class UpperStr(str):
