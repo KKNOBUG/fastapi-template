@@ -8,11 +8,12 @@
 """
 from datetime import timedelta, datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from applications.base.schemas.token_schema import CredentialsSchema, JWTOut, JWTPayload
+from applications.dependencies import get_user_crud
 from applications.user.models.user_model import User
-from applications.user.services.user_crud import USER_CRUD
+from applications.user.services.user_crud import UserCrud
 from configure import PROJECT_CONFIG
 from core.exceptions import NotFoundException, NoPermissionException
 from core.responses import SuccessResponse, NotFoundResponse
@@ -23,13 +24,16 @@ auth_secure = APIRouter()
 
 
 @auth_public.post("/access_token", summary="用户鉴权", description="验证用户密码和状态并生成令牌")
-async def get_login_access_token(credentials: CredentialsSchema):
+async def get_login_access_token(
+        credentials: CredentialsSchema,
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        user: User = await USER_CRUD.authenticate(credentials)
+        user: User = await user_crud.authenticate(credentials)
     except (NotFoundException, NoPermissionException) as e:
         return NotFoundResponse(message=str(e.message), data=credentials.model_dump())
 
-    await USER_CRUD.update_last_login(user.id)
+    await user_crud.update_last_login(user.id)
     access_token_expires = timedelta(minutes=PROJECT_CONFIG.AUTH_JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     expire = datetime.now(timezone.utc) + access_token_expires
 
@@ -63,8 +67,10 @@ async def get_login_access_token(credentials: CredentialsSchema):
 
 
 @auth_secure.post("/userinfo", summary="查看用户信息", dependencies=[DependAuth])
-async def get_userinfo():
+async def get_userinfo(
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     user_id = CTX_USER_ID.get()
-    user_obj = await USER_CRUD.get_or_error(id=user_id)
+    user_obj = await user_crud.get_or_error(id=user_id)
     data = await user_obj.to_dict(exclude_fields=["password"])
     return SuccessResponse(data=data)

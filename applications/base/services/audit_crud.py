@@ -140,6 +140,3 @@ class AuditCrud(ScaffoldCrud[Audit, AuditCreate, Any]):
         await self.model.all().delete()
         LOGGER.warning(f"已清空所有审计日志, 删除数量: {count}")
         return count
-
-
-AUDIT_CRUD = AuditCrud()

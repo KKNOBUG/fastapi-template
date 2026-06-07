@@ -124,8 +124,7 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
         except DoesNotExist as e:
             raise NotFoundException(message=f"用户(id={user_id})信息不存在")
 
-        data = await instance.to_dict()
-        return data
+        return instance
 
     async def reset_password(self, user_id: int):
         instance = await self.get_by_id(user_id=user_id, on_error=True)
@@ -136,6 +135,3 @@ class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
         await instance.save()
         data = await instance.to_dict(exclude_fields=["id", "password"])
         return data
-
-
-USER_CRUD = UserCrud()

@@ -8,9 +8,10 @@
 """
 import traceback
 
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body, Query, Depends
 from tortoise.expressions import Q
 
+from applications.dependencies import get_user_crud
 from applications.user.schemas.user_schema import (
     UserCreate,
     UserUpdate,
@@ -18,7 +19,7 @@ from applications.user.schemas.user_schema import (
     UpdatePassword,
     UserBatchDelete
 )
-from applications.user.services.user_crud import USER_CRUD
+from applications.user.services.user_crud import UserCrud
 from configure import LOGGER
 from core.exceptions import DataAlreadyExistsException, NotFoundException, ParameterException
 from core.responses import (
@@ -34,9 +35,12 @@ user_secure = APIRouter()
 
 
 @user_public.post("/create", summary="新增用户")
-async def create_user(user_in: UserCreate = Body()):
+async def create_user(
+        user_in: UserCreate = Body(),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        instance = await USER_CRUD.create_user(user_in=user_in)
+        instance = await user_crud.create_user(user_in=user_in)
         data = await instance.to_dict(exclude_fields=["password"])
         return SuccessResponse(data=data)
     except DataAlreadyExistsException as e:
@@ -46,9 +50,12 @@ async def create_user(user_in: UserCreate = Body()):
 
 
 @user_secure.delete("/delete", summary="删除用户", description="根据id删除用户信息")
-async def delete_user(user_id: int = Query(..., description="用户ID")):
+async def delete_user(
+        user_id: int = Query(..., description="用户ID"),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        instance = await USER_CRUD.delete_user(user_id)
+        instance = await user_crud.delete_user(user_id)
         data = await instance.to_dict(exclude_fields=["password"])
         return SuccessResponse(data=data)
     except NotFoundException as e:
@@ -58,9 +65,12 @@ async def delete_user(user_id: int = Query(..., description="用户ID")):
 
 
 @user_secure.post("/delete", summary="按id列表删除用户")
-async def delete_user_batch(user_in: UserBatchDelete = Body(..., description="用户信息")):
+async def delete_user_batch(
+        user_in: UserBatchDelete = Body(..., description="用户信息"),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        deleted_ids = await USER_CRUD.delete_users(user_in=user_in)
+        deleted_ids = await user_crud.delete_users(user_in=user_in)
         deleted_num = len(deleted_ids)
         LOGGER.info(f"按id列表删除用户成功, 数量: {deleted_num}")
         return SuccessResponse(message="删除成功", data={"deleted_ids": deleted_ids}, total=deleted_num)
@@ -70,9 +80,12 @@ async def delete_user_batch(user_in: UserBatchDelete = Body(..., description="�
 
 
 @user_secure.post("/update", summary="更新用户", description="根据id更新用户信息")
-async def update_user(user_in: UserUpdate = Body(..., description="用户信息")):
+async def update_user(
+        user_in: UserUpdate = Body(..., description="用户信息"),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        instance = await USER_CRUD.update_user(user_in)
+        instance = await user_crud.update_user(user_in)
         data = await instance.to_dict(exclude_fields=["password"])
         return SuccessResponse(data=data)
     except NotFoundException as e:
@@ -82,9 +95,12 @@ async def update_user(user_in: UserUpdate = Body(..., description="用户信息"
 
 
 @user_secure.get("/get", summary="查询用户信息", description="根据id查询用户信息")
-async def get_user(user_id: int = Query(..., description="用户ID")):
+async def get_user(
+        user_id: int = Query(..., description="用户ID"),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        instance = await USER_CRUD.get_by_id(user_id=user_id, on_error=True)
+        instance = await user_crud.get_by_id(user_id=user_id, on_error=True)
         data: dict = await instance.to_dict(exclude_fields=["password"])
         return SuccessResponse(data=data)
     except ParameterException as e:
@@ -94,9 +110,12 @@ async def get_user(user_id: int = Query(..., description="用户ID")):
 
 
 @user_secure.get("/byUsername", summary="查询用户信息", description="根据用户名查询用户信息")
-async def get_user_by_username(username: str = Query(..., description="用户名称")):
+async def get_user_by_username(
+        username: str = Query(..., description="用户名称"),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     try:
-        instance = await USER_CRUD.get_by_username(username=username, on_error=True)
+        instance = await user_crud.get_by_username(username=username, on_error=True)
         data: dict = await instance.to_dict(exclude_fields=["password"])
         return SuccessResponse(data=data)
     except ParameterException as e:
@@ -118,6 +137,7 @@ async def list_user(
         user_type: int = Query(default=None, description="用户类型：0xx 1xx 2xx"),
         is_active: bool = Query(default=None, description="是否激活"),
         is_superuser: bool = Query(default=None, description="是否为超级管理员"),
+        user_crud: UserCrud = Depends(get_user_crud),
 ):
     q = Q()
     if username:
@@ -137,13 +157,16 @@ async def list_user(
     if is_superuser is not None:
         q &= Q(is_superuser=is_superuser)
     q &= Q(state=0)
-    total, user_objs = await USER_CRUD.list(page=page, page_size=page_size, order=order, search=q)
+    total, user_objs = await user_crud.list(page=page, page_size=page_size, order=order, search=q)
     data = [await obj.to_dict(exclude_fields=["password"]) for obj in user_objs]
     return SuccessResponse(data=data, total=total)
 
 
 @user_secure.post("/search", summary="查询用户列表", description="支持分页按条件查询用户列表信息（Body）")
-async def get_users(user_in: UserSelect = Body()):
+async def get_users(
+        user_in: UserSelect = Body(),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     q = Q()
     if user_in.username:
         q &= Q(username__contains=user_in.username)
@@ -173,7 +196,7 @@ async def get_users(user_in: UserSelect = Body()):
         q &= Q(state=user_in.state)
     else:
         q &= Q(state=0)
-    total, instances = await USER_CRUD.list(
+    total, instances = await user_crud.list(
         page=user_in.page,
         page_size=user_in.page_size,
         search=q,
@@ -184,10 +207,13 @@ async def get_users(user_in: UserSelect = Body()):
 
 
 @user_secure.post("/update_password", summary="修改密码", dependencies=[DependAuth])
-async def update_user_password(req_in: UpdatePassword):
+async def update_user_password(
+        req_in: UpdatePassword,
+        user_crud: UserCrud = Depends(get_user_crud),
+):
     user_id = CTX_USER_ID.get()
     try:
-        instance = await USER_CRUD.get_by_id(user_id, on_error=True)
+        instance = await user_crud.get_by_id(user_id, on_error=True)
     except ParameterException as e:
         return FailureResponse(message=e.message)
     except NotFoundException as e:
@@ -202,6 +228,9 @@ async def update_user_password(req_in: UpdatePassword):
 
 
 @user_secure.post("/reset_password", summary="重置密码")
-async def reset_password(user_id: int = Body(..., description="用户ID", embed=True)):
-    data = await USER_CRUD.reset_password(user_id)
+async def reset_password(
+        user_id: int = Body(..., description="用户ID", embed=True),
+        user_crud: UserCrud = Depends(get_user_crud),
+):
+    data = await user_crud.reset_password(user_id)
     return SuccessResponse(data=data)

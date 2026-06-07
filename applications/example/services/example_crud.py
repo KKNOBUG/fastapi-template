@@ -108,7 +108,3 @@ class ProductCrud(ScaffoldCrud[Product, ProductCreate, ProductUpdate]):
             total_stock=Sum("stock")
         )
         return results
-
-
-CATEGORY_CRUD = CategoryCrud()
-PRODUCT_CRUD = ProductCrud()

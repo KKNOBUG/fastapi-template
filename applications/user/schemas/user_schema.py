@@ -57,6 +57,7 @@ class UserSelect(UserBase):
     order: Optional[list] = Field(default=[], examples=["id"], description="排序字段")
     state: Optional[int] = Field(default=None, description="状态(0:启用, 1:禁用)")
 
+
 class UpdatePassword(BaseModel):
     old_password: str = Field(description="旧密码")
     new_password: str = Field(description="新密码")
