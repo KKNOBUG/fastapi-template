@@ -535,8 +535,8 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if not ids:
             return 0
 
-        update_fields = {"state": 1}
-        if hasattr(self.model, 'updated_user') and updated_user:
+        update_fields: Dict[str, Any] = {"state": 1}
+        if hasattr(self.model, 'updated_user') and updated_user is not None:
             update_fields["updated_user"] = updated_user
 
         count = await self.model.filter(id__in=ids, state__not=1).update(**update_fields)
@@ -560,7 +560,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if not ids:
             return 0
 
-        update_fields = {"state": 0}
+        update_fields: Dict[str, Any] = {"state": 0}
         if hasattr(self.model, 'updated_user') and updated_user is not None:
             update_fields["updated_user"] = updated_user
 
@@ -570,15 +570,7 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
 
 class UpperStr(str):
-    """
-    大写字符串类型，用于 Pydantic 模型验证。
-
-    使用示例：
-        class MySchema(BaseModel):
-            code: UpperStr  # 自动转换为大写
-
-    输入 "abc" 将自动转换为 "ABC"
-    """
+    """大写字符串类型，用于 Pydantic 模型验证。"""
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -593,7 +585,7 @@ class UpperStr(str):
         )
 
     @classmethod
-    def _validate(cls, v: str, info: Any) -> 'UpperStr':
+    def _validate(cls, v: Optional[str], info: Any) -> 'UpperStr':
         """验证并转换为大写字符串"""
         if not isinstance(v, str):
             raise ValueError("必须是字符串类型")
@@ -601,15 +593,7 @@ class UpperStr(str):
 
 
 class LowerStr(str):
-    """
-    小写字符串类型，用于 Pydantic 模型验证。
-
-    使用示例：
-        class MySchema(BaseModel):
-            email: LowerStr  # 自动转换为小写
-
-    输入 "ABC@EXAMPLE.COM" 将自动转换为 "abc@example.com"
-    """
+    """小写字符串类型，用于 Pydantic 模型验证。"""
 
     @classmethod
     def __get_pydantic_core_schema__(
@@ -624,7 +608,7 @@ class LowerStr(str):
         )
 
     @classmethod
-    def _validate(cls, v: str, info: Any) -> 'LowerStr':
+    def _validate(cls, v: Optional[str], info: Any) -> 'LowerStr':
         """验证并转换为小写字符串"""
         if not isinstance(v, str):
             raise ValueError("必须是字符串类型")
