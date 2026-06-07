@@ -18,7 +18,6 @@ from pydantic_core import core_schema
 from tortoise import fields, models
 from tortoise.exceptions import FieldError
 from tortoise.expressions import Q
-from tortoise.functions import Sum, Avg, Max, Min, Count
 from tortoise.models import Model
 from tortoise.queryset import QuerySet
 from tortoise.transactions import in_transaction
@@ -307,8 +306,6 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         self.model = model
 
-    # ==================== 查询方法 ====================
-
     async def get_or_error(self, id: int, **kwargs) -> ModelType:
         """
         根据 ID 获取对象，不存在时抛出异常。
@@ -386,8 +383,6 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await query.offset((page - 1) * page_size).limit(page_size).order_by(*order).prefetch_related(*related)
         )
 
-    # ==================== 创建和更新方法 ====================
-
     async def create(self, obj_in: Union[CreateSchemaType, Dict]) -> ModelType:
         """
         创建新记录。
@@ -402,6 +397,29 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj = self.model(**obj_dict)
         await obj.save()
         return obj
+
+    async def batch_create(self, obj_list: List[Union[CreateSchemaType, Dict]]) -> List[ModelType]:
+        """
+        批量创建记录。
+
+        :param obj_list: 创建数据列表，每个元素可以是 Pydantic Schema 实例或字典
+        :return: 创建成功的数据库对象列表
+        """
+        if not obj_list:
+            return []
+
+        instances = []
+        for obj_in in obj_list:
+            if isinstance(obj_in, Dict):
+                obj_dict = obj_in
+            else:
+                obj_dict = obj_in.model_dump(warnings=False)
+            obj = self.model(**obj_dict)
+            await obj.save()
+            instances.append(obj)
+
+        LOGGER.info(f"批量创建成功: {self.model.__name__}, 数量={len(instances)}")
+        return instances
 
     async def update(self, id: int, obj_in: Union[UpdateSchemaType, Dict[str, Any]]) -> ModelType:
         """
@@ -422,7 +440,63 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         LOGGER.info(f"更新成功: {self.model.__name__}(id={id}), 字段: {list(obj_dict.keys())}")
         return obj
 
-    # ==================== 删除方法（物理删除） ====================
+    async def batch_update(
+            self,
+            updates: List[Dict[str, Any]],
+            key_field: str = "id",
+            strict: bool = True
+    ) -> int:
+        """
+        批量更新记录。
+
+        :param updates: 更新数据列表，每个元素必须包含 key_field 指定的字段
+        :param key_field: 作为更新条件的字段名，默认为 "id"
+        :param strict: 是否严格校验字段
+        :return: 实际更新的记录数
+
+        使用示例：
+            await crud.batch_update([
+                {"id": 1, "name": "张三", "age": 20},
+                {"id": 2, "name": "李四", "age": 25},
+            ])
+        """
+        if not updates:
+            return 0
+
+        # 获取模型有效字段列表
+        valid_fields = set(self.model._meta.db_fields)
+        valid_fields.update(self.model._meta.fk_fields)
+
+        total_updated = 0
+        for update_data in updates:
+            key_value = update_data.get(key_field)
+            if not key_value:
+                LOGGER.warning(f"批量更新跳过: 缺少{key_field}字段")
+                continue
+
+            # 移除条件字段
+            update_dict = {k: v for k, v in update_data.items() if k != key_field}
+
+            # 校验字段
+            invalid_fields = set(update_dict.keys()) - valid_fields
+            if invalid_fields:
+                if strict:
+                    LOGGER.error(f"批量更新跳过(id={key_value}): 包含不存在的字段: {invalid_fields}")
+                    continue
+                else:
+                    LOGGER.warning(f"批量更新忽略字段(id={key_value}): {invalid_fields}")
+                    for field in invalid_fields:
+                        update_dict.pop(field, None)
+
+            if not update_dict:
+                continue
+
+            # 执行更新
+            count = await self.model.filter(**{key_field: key_value}).update(**update_dict)
+            total_updated += count
+
+        LOGGER.info(f"批量更新成功: {self.model.__name__}, 数量={total_updated}")
+        return total_updated
 
     async def remove_or_error(self, id: int, **kwargs) -> ModelType:
         """
@@ -463,8 +537,6 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         LOGGER.info(f"批量硬删除成功: {self.model.__name__}, 数量={count}, ids={ids}")
         return count
 
-    # ==================== 查询构建器 ====================
-
     def query(self) -> 'QueryBuilder[ModelType]':
         """
         获取查询构建器，支持链式调用构建复杂查询。
@@ -484,8 +556,6 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         :return: 查询构建器实例
         """
         return QueryBuilder(self.model)
-
-    # ==================== 统计聚合方法 ====================
 
     async def count(self, search: Q = Q()) -> int:
         """
@@ -570,91 +640,6 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         results = await query.annotate(**aggregations).values(field, *aggregations.keys())
 
         return results
-
-    # ==================== 批量操作方法 ====================
-
-    async def batch_create(self, obj_list: List[Union[CreateSchemaType, Dict]]) -> List[ModelType]:
-        """
-        批量创建记录。
-
-        :param obj_list: 创建数据列表，每个元素可以是 Pydantic Schema 实例或字典
-        :return: 创建成功的数据库对象列表
-        """
-        if not obj_list:
-            return []
-
-        instances = []
-        for obj_in in obj_list:
-            if isinstance(obj_in, Dict):
-                obj_dict = obj_in
-            else:
-                obj_dict = obj_in.model_dump(warnings=False)
-            obj = self.model(**obj_dict)
-            await obj.save()
-            instances.append(obj)
-
-        LOGGER.info(f"批量创建成功: {self.model.__name__}, 数量={len(instances)}")
-        return instances
-
-    async def batch_update(
-            self,
-            updates: List[Dict[str, Any]],
-            key_field: str = "id",
-            strict: bool = True
-    ) -> int:
-        """
-        批量更新记录。
-
-        :param updates: 更新数据列表，每个元素必须包含 key_field 指定的字段
-        :param key_field: 作为更新条件的字段名，默认为 "id"
-        :param strict: 是否严格校验字段
-        :return: 实际更新的记录数
-
-        使用示例：
-            await crud.batch_update([
-                {"id": 1, "name": "张三", "age": 20},
-                {"id": 2, "name": "李四", "age": 25},
-            ])
-        """
-        if not updates:
-            return 0
-
-        # 获取模型有效字段列表
-        valid_fields = set(self.model._meta.db_fields)
-        valid_fields.update(self.model._meta.fk_fields)
-
-        total_updated = 0
-        for update_data in updates:
-            key_value = update_data.get(key_field)
-            if not key_value:
-                LOGGER.warning(f"批量更新跳过: 缺少{key_field}字段")
-                continue
-
-            # 移除条件字段
-            update_dict = {k: v for k, v in update_data.items() if k != key_field}
-
-            # 校验字段
-            invalid_fields = set(update_dict.keys()) - valid_fields
-            if invalid_fields:
-                if strict:
-                    LOGGER.error(f"批量更新跳过(id={key_value}): 包含不存在的字段: {invalid_fields}")
-                    continue
-                else:
-                    LOGGER.warning(f"批量更新忽略字段(id={key_value}): {invalid_fields}")
-                    for field in invalid_fields:
-                        update_dict.pop(field, None)
-
-            if not update_dict:
-                continue
-
-            # 执行更新
-            count = await self.model.filter(**{key_field: key_value}).update(**update_dict)
-            total_updated += count
-
-        LOGGER.info(f"批量更新成功: {self.model.__name__}, 数量={total_updated}")
-        return total_updated
-
-    # ==================== 事务支持方法 ====================
 
     @staticmethod
     def transactional(func):
@@ -752,8 +737,6 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
             LOGGER.info(f"事务更新成功: {self.model.__name__}(id={id})")
             return obj
-
-    # ==================== 软删除方法（基于 StateModel） ====================
 
     async def soft_delete(self, id: int, updated_user: Optional[str] = None) -> ModelType:
         """
