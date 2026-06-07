@@ -8,27 +8,10 @@
 """
 from fastapi import FastAPI
 
-from applications.user.schemas.user_schema import UserCreate
-from applications.user.services.user_crud import USER_CRUD
-
-
-async def init_database_user():
-    user = await USER_CRUD.model.exists()
-    if not user:
-        await USER_CRUD.create_user(
-            UserCreate(
-                username="admin",
-                password="123456",
-                alias="系统管理员",
-                email="admin@test.com",
-                phone="18888888888",
-                avatar="/static/avatar/default/20250101010101.png",
-                state=0,
-                is_active=True,
-                is_superuser=True,
-            )
-        )
+from applications.example.services.init_data import init_example_data
+from applications.user.services.init_data import init_database_user
 
 
 async def init_database_table(app: FastAPI):
     await init_database_user()
+    await init_example_data()

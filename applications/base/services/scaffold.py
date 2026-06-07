@@ -212,7 +212,7 @@ class ScaffoldModel(models.Model):
 
 class UUIDModel:
     """UUID 唯一标识 Mixin，为模型添加 uid 字段。"""
-    uid = fields.UUIDField(unique=True, description="唯一标识符")
+    uid = fields.UUIDField(unique=True, null=True, description="唯一标识符")
 
 
 class PacketModel:

@@ -4,13 +4,14 @@
 @Email   : 807440781@qq.com
 @Project : fastapi-template
 @Module  : __init__.py
-@DateTime: 2025/4/28 18:07
+@DateTime: 2025/6/7
 """
+from fastapi import APIRouter
 
+from .example_view import example_category, example_product
 
-def print_hi(name):
-    print(f'Hi, {name}')
+example_category_router = APIRouter()
+example_product_router = APIRouter()
 
-
-if __name__ == '__main__':
-    print_hi('Python')
+example_category_router.include_router(example_category)
+example_product_router.include_router(example_product)
