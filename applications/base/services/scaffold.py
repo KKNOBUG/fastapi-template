@@ -230,12 +230,12 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """
         self.model = model
 
-    async def get_or_error(self, id: int) -> ModelType:
+    async def get_or_error(self, id: int, **kwargs) -> ModelType:
         """
         :param id: 要获取的对象的唯一标识符。
         :return: 与 ID 对应的数据库对象，如果不存在可能会抛出异常。
         """
-        return await self.model.get(id=id)
+        return await self.model.get(id=id, **kwargs)
 
     async def get_or_none(self, id: int, **kwargs) -> Optional[ModelType]:
         """
@@ -317,22 +317,170 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await obj.save()
         return obj
 
-    async def remove(self, id: int) -> ModelType:
+    async def delete(self, id: int, **kwargs) -> ModelType:
         """
         :param id: 要删除的对象的唯一标识符（如果不存在可能会抛出异常）。
         """
-        obj = await self.get_or_error(id=id)
+        obj = await self.get_or_error(id=id, **kwargs)
         await obj.delete()
         return obj
 
-    async def delete(self, id: int, **kwargs) -> ModelType:
+    async def soft_delete(self, id: int, updated_user: Optional[str] = None) -> ModelType:
         """
-        :param id: 要删除的对象的唯一标识符。
+        软删除：将记录标记为已删除（state=1）
+
+        :param id: 要软删除的对象的唯一标识符。
+        :param updated_user: 执行操作的用户标识（可选）。
+        :return: 更新后的数据库对象。
+        :raises NotFoundException: 对象不存在时抛出。
+        :raises ParameterException: 模型未继承 StateModel 时抛出。
+        """
+        obj = await self.get_or_error(id=id)
+        if not hasattr(obj, 'state'):
+            error_message: str = f"模型[{self.model.__name__}]未继承 StateModel，无法执行软删除"
+            LOGGER.error(error_message)
+            raise ParameterException(message=error_message)
+
+        # 如果模型有 updated_user 字段，记录删除人
+        if updated_user is not None and hasattr(obj, 'updated_user'):
+            obj.updated_user = updated_user
+
+        # 保存更新
+        obj.state = 1
+        await obj.save(update_fields=["state", "updated_user"] if hasattr(obj, 'updated_user') else ["state"])
+        LOGGER.info(f"软删除成功: {self.model.__name__}(id={id})")
+        return obj
+
+    async def soft_delete_batch(self, ids: List[int], updated_user: Optional[str] = None, **kwargs) -> int:
+        """
+        批量软删除（state=1）。
+
+        :param ids: 要软删除的对象ID列表。
+        :param updated_user: 执行操作的用户标识（可选）。
+        :return: 实际更新的记录数。
+        :raises ParameterException: 模型未继承 StateModel 时抛出。
+        """
+        if not hasattr(self.model, 'state'):
+            error_message: str = f"模型[{self.model.__name__}]未继承 StateModel，无法执行批量软删除"
+            LOGGER.error(error_message)
+            raise ParameterException(message=error_message)
+
+        if not ids:
+            return 0
+
+        update_fields = {"state": 1}
+        if hasattr(self.model, 'updated_user') and updated_user is not None:
+            update_fields["updated_user"] = updated_user
+
+        count = await self.model.filter(id__in=ids, state__not=1).update(**update_fields)
+        LOGGER.info(f"批量软删除成功: {self.model.__name__}, 数量={count}, ids={ids}")
+        return count
+
+    async def soft_delete_restore(self, id: int, updated_user: Optional[str] = None) -> ModelType:
+        """
+        恢复软删除的记录（state=0）。
+
+        :param id: 要恢复的对象的唯一标识符。
+        :param updated_user: 执行操作的用户标识（可选）。
+        :return: 恢复后的数据库对象。
+        :raises NotFoundException: 对象不存在时抛出。
+        :raises ParameterException: 模型未继承 StateModel 时抛出。
+        """
+        obj = await self.get_or_error(id=id)
+
+        if not hasattr(obj, 'state'):
+            error_message: str = f"模型[{self.model.__name__}]未继承 StateModel，无法执行恢复操作"
+            LOGGER.error(error_message)
+            raise ParameterException(message=error_message)
+
+        # 如果模型有 updated_user 字段，记录更新人
+        if updated_user is not None and hasattr(obj, 'updated_user'):
+            obj.updated_user = updated_user
+
+        obj.state = 0
+        await obj.save(update_fields=["state", "updated_user"] if hasattr(obj, 'updated_user') else ["state"])
+        LOGGER.info(f"恢复软删除成功: {self.model.__name__}(id={id})")
+        return obj
+
+    async def soft_delete_restore_batch(self, ids: List[int], updated_user: Optional[str] = None) -> int:
+        """
+        批量恢复软删除的记录（state=0）。
+
+        :param ids: 要恢复的对象ID列表。
+        :param updated_user: 执行操作的用户标识（可选）。
+        :return: 实际恢复的记录数。
+        :raises ParameterException: 模型未继承 StateModel 时抛出。
+        """
+        if not hasattr(self.model, 'state'):
+            error_message: str = f"模型[{self.model.__name__}]未继承 StateModel，无法执行批量恢复"
+            LOGGER.error(error_message)
+            raise ParameterException(message=error_message)
+
+        if not ids:
+            return 0
+
+        update_fields = {"state": 1}
+        if hasattr(self.model, 'updated_user') and updated_user is not None:
+            update_fields["updated_user"] = updated_user
+
+        count = await self.model.filter(id__in=ids, state=1).update(**update_fields)
+        LOGGER.info(f"批量恢复成功: {self.model.__name__}, 数量={count}, ids={ids}")
+        return count
+
+    async def soft_deleted_list(
+            self,
+            page: int = 1,
+            page_size: int = 10,
+            search: Q = Q(),
+            order: Optional[list] = None
+    ) -> Tuple[int, List[ModelType]]:
+        """
+        查询已软删除的记录列表（state=1）。
+
+        :param page: 页码，从 1 开始。
+        :param page_size: 每页的对象数量。
+        :param search: 额外的搜索条件。
+        :param order: 排序条件。
+        :return: 一个元组，包含总对象数和该页的对象列表。
+        :raises ParameterException: 模型未继承 StateModel 时抛出。
+        """
+        if not hasattr(self.model, 'state'):
+            error_message: str = f"模型[{self.model.__name__}]未继承 StateModel，无法查询已删除记录"
+            LOGGER.error(error_message)
+            raise ParameterException(message=error_message)
+
+        # 强制添加 state=1 条件
+        q = Q(state=1) & search
+        return await self.list(page=page, page_size=page_size, search=q, order=order or ["-updated_time"])
+
+    async def hard_delete(self, id: int, **kwargs) -> ModelType:
+        """
+        硬删除：从数据库中永久移除记录（包括已软删除的记录）。
+
+        :param id: 要硬删除的对象的唯一标识符。
+        :return: 被删除的数据库对象。
+        :raises NotFoundException: 对象不存在时抛出。
         """
         obj = await self.get_or_none(id=id, **kwargs)
         if obj:
             await obj.delete()
+        await obj.delete()
+        LOGGER.info(f"硬删除成功: {self.model.__name__}(id={id})")
         return obj
+
+    async def batch_hard_delete(self, ids: List[int]) -> int:
+        """
+        批量硬删除：从数据库中永久移除记录。
+
+        :param ids: 要硬删除的对象ID列表。
+        :return: 实际删除的记录数。
+        """
+        if not ids:
+            return 0
+
+        count = await self.model.filter(id__in=ids).delete()
+        LOGGER.info(f"批量硬删除成功: {self.model.__name__}, 数量={count}, ids={ids}")
+        return count
 
 
 class UpperStr(str):
