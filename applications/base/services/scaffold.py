@@ -20,6 +20,7 @@ from tortoise.exceptions import FieldError
 from tortoise.expressions import Q
 from tortoise.models import Model
 from tortoise.queryset import QuerySet
+from tortoise.transactions import in_transaction
 
 from configure import GLOBAL_CONFIG, LOGGER
 from core.exceptions import ParameterException, NotFoundException
@@ -57,9 +58,15 @@ class ScaffoldModel(models.Model):
             fk: bool = False,
             fk_include_fields: Optional[Union[List[str], Set[str]]] = None,
             fk_exclude_fields: Optional[Union[List[str], Set[str]]] = None,
+            _cache: Optional[Dict[int, Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
         将模型实例转换为字典形式，支持灵活配置要包含或排除的字段，以及是否处理多对多关系和外键关系。
+
+        缓存机制说明：
+        - 使用 _cache 参数传入缓存字典，避免同一请求中重复查询关联对象
+        - 缓存键格式：{instance_id: {field_name: value}}
+        - 适用于列表查询时多个对象共享关联数据的场景
 
         :param include_fields: 需要引入的本表字段列表，默认为 None（表示包含所有字段）
         :param exclude_fields: 需要排除的本表字段列表，默认为 None
@@ -70,8 +77,17 @@ class ScaffoldModel(models.Model):
         :param fk: 是否获取外键字段对应的数据，默认为 False
         :param fk_include_fields: 外键关系中需要引入的字段列表
         :param fk_exclude_fields: 外键关系中需要排除的字段列表
+        :param _cache: 内部缓存字典，用于避免重复查询（外部调用无需传入）
         :return: 包含模型数据的字典
         """
+        # 初始化缓存
+        cache = _cache or {}
+        instance_id = id(self)
+
+        # 检查缓存：如果该实例已经序列化过，直接返回缓存结果
+        if instance_id in cache:
+            return cache[instance_id]
+
         # 若未提供排除字段列表，则初始化为空列表
         exclude_fields = exclude_fields or []
         m2m_exclude_fields = m2m_exclude_fields or []
@@ -95,7 +111,7 @@ class ScaffoldModel(models.Model):
         # 如果 fk 为 True，异步获取外键字段关联的数据
         if fk:
             tasks = [
-                self.__fetch_fk_field(field, fk_include_fields, fk_exclude_fields)
+                self.__fetch_fk_field(field, fk_include_fields, fk_exclude_fields, cache)
                 for field in self._meta.fk_fields
                 if field not in exclude_fields
             ]
@@ -106,7 +122,7 @@ class ScaffoldModel(models.Model):
         # 如果 m2m 为 True，异步获取多对多关系字段的数据
         if m2m:
             tasks = [
-                self.__fetch_m2m_field(field, m2m_include_fields, m2m_exclude_fields)
+                self.__fetch_m2m_field(field, m2m_include_fields, m2m_exclude_fields, cache)
                 for field in self._meta.m2m_fields
                 if field not in exclude_fields
             ]
@@ -114,6 +130,8 @@ class ScaffoldModel(models.Model):
             for field, values in results:
                 d[field] = values
 
+        # 存入缓存
+        cache[instance_id] = d
         return d
 
     @classmethod
@@ -141,13 +159,14 @@ class ScaffoldModel(models.Model):
             value = str(value)
         return value
 
-    async def __fetch_fk_field(self, field, fk_include_fields, fk_exclude_fields):
+    async def __fetch_fk_field(self, field, fk_include_fields, fk_exclude_fields, cache):
         """
         获取外键字段关联对象的数据，并将其转换为字典形式。
 
         :param field: 外键字段名
         :param fk_include_fields: 需要引入的外键表字段列表
         :param fk_exclude_fields: 需要排除的外键表字段列表
+        :param cache: 缓存字典，避免重复查询
         :return: (字段名, 关联对象字典或 None)
         """
         fk_instance = getattr(self, field)
@@ -156,17 +175,19 @@ class ScaffoldModel(models.Model):
                 include_fields=fk_include_fields,
                 exclude_fields=fk_exclude_fields,
                 m2m=False,  # 避免无限递归
-                fk=False  # 根据需求调整
+                fk=False,  # 根据需求调整
+                _cache=cache  # 传递缓存
             )
         return field, None
 
-    async def __fetch_m2m_field(self, field, m2m_include_fields, m2m_exclude_fields):
+    async def __fetch_m2m_field(self, field, m2m_include_fields, m2m_exclude_fields, cache):
         """
         获取多对多关系字段的数据，并将其转换为字典列表。
 
         :param field: 多对多字段名
         :param m2m_include_fields: 需要引入的多对多表字段列表
         :param m2m_exclude_fields: 需要排除的多对多表字段列表
+        :param cache: 缓存字典，避免重复查询
         :return: (字段名, 关联对象字典列表)
         """
         instances = await getattr(self, field).all()
@@ -176,7 +197,8 @@ class ScaffoldModel(models.Model):
                 include_fields=m2m_include_fields,
                 exclude_fields=m2m_exclude_fields,
                 m2m=False,  # 避免无限递归
-                fk=False  # 根据需求调整
+                fk=False,  # 根据需求调整
+                _cache=cache  # 传递缓存
             )
             values.append(value)
         return field, values
@@ -437,6 +459,103 @@ class ScaffoldCrud(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         count = await self.model.filter(id__in=ids).delete()
         LOGGER.info(f"批量硬删除成功: {self.model.__name__}, 数量={count}, ids={ids}")
         return count
+
+    # ==================== 事务支持方法 ====================
+
+    @staticmethod
+    def transactional(func):
+        """
+        事务装饰器，自动包装异步函数在数据库事务中执行。
+
+        使用示例：
+            class UserCrud(ScaffoldCrud[User, UserCreate, UserUpdate]):
+                @ScaffoldCrud.transactional
+                async def transfer_money(self, from_id: int, to_id: int, amount: Decimal):
+                    await self.update(from_id, {"balance": F("balance") - amount})
+                    await self.update(to_id, {"balance": F("balance") + amount})
+
+        :param func: 要包装的异步函数
+        :return: 包装后的函数
+        """
+
+        async def wrapper(*args, **kwargs):
+            async with in_transaction() as connection:
+                return await func(*args, **kwargs)
+
+        return wrapper
+
+    async def create_with_related(
+            self,
+            obj_in: Union[CreateSchemaType, Dict],
+            related_data: Optional[Dict[str, List[Union[BaseModel, Dict]]]] = None
+    ) -> ModelType:
+        """
+        创建记录及其关联数据（在事务中执行）。
+
+        :param obj_in: 主记录创建数据
+        :param related_data: 关联数据字典，格式为 {"field_name": [obj1, obj2, ...]}
+        :return: 创建成功的主记录对象
+        :raises Exception: 创建失败时回滚事务
+        """
+        async with in_transaction() as connection:
+            # 创建主记录
+            if isinstance(obj_in, Dict):
+                obj_dict = obj_in
+            else:
+                obj_dict = obj_in.model_dump(warnings=False)
+            obj = self.model(**obj_dict)
+            await obj.save(using_db=connection)
+
+            # 创建关联数据
+            if related_data:
+                for field_name, items in related_data.items():
+                    related_manager = getattr(obj, field_name)
+                    for item in items:
+                        if isinstance(item, Dict):
+                            await related_manager.create(**item, using_db=connection)
+                        else:
+                            await related_manager.create(**item.model_dump(warnings=False), using_db=connection)
+
+            LOGGER.info(f"事务创建成功: {self.model.__name__}(id={obj.id})")
+            return obj
+
+    async def update_with_related(
+            self,
+            id: int,
+            obj_in: Union[UpdateSchemaType, Dict[str, Any]],
+            related_updates: Optional[Dict[str, List[Dict[str, Any]]]] = None
+    ) -> ModelType:
+        """
+        更新记录及其关联数据（在事务中执行）。
+
+        :param id: 要更新的记录 ID
+        :param obj_in: 主记录更新数据
+        :param related_updates: 关联数据更新字典，格式为 {"field_name": [{"id": 1, "data": {...}}, ...]}
+        :return: 更新后的主记录对象
+        :raises Exception: 更新失败时回滚事务
+        """
+        async with in_transaction() as connection:
+            # 更新主记录
+            obj = await self.get_or_error(id=id)
+            if isinstance(obj_in, Dict):
+                obj_dict = obj_in
+            else:
+                obj_dict = obj_in.model_dump(exclude_unset=True, exclude={"id"})
+            obj = obj.update_from_dict(obj_dict)
+            await obj.save(using_db=connection)
+
+            # 更新关联数据
+            if related_updates:
+                for field_name, items in related_updates.items():
+                    related_manager = getattr(obj, field_name)
+                    for item in items:
+                        item_id = item.get("id")
+                        item_data = item.get("data", {})
+                        if item_id:
+                            await related_manager.filter(id=item_id).update(**item_data, using_db=connection)
+
+            LOGGER.info(f"事务更新成功: {self.model.__name__}(id={id})")
+            return obj
 
     # ==================== 软删除方法（基于 StateModel） ====================
 
