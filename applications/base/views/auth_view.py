@@ -11,7 +11,7 @@ from datetime import timedelta, datetime, timezone
 from fastapi import APIRouter, Depends
 
 from applications.base.schemas.token_schema import CredentialsSchema, JWTOut, JWTPayload
-from applications.dependencies import get_user_crud
+from applications.user.dependencies import get_user_crud
 from applications.user.models.user_model import User
 from applications.user.services.user_crud import UserCrud
 from configure import PROJECT_CONFIG

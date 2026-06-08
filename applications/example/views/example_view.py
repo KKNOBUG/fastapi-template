@@ -11,7 +11,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Body, Query, Depends
 from tortoise.expressions import Q
 
-from applications.dependencies import (
+from applications.example.dependencies import (
     get_category_crud,
     get_product_crud,
     get_example_services,

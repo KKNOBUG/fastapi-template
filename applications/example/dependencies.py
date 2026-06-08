@@ -6,25 +6,31 @@
 @Module  : dependencies.py
 @DateTime: 2025/6/7
 
-依赖注入工厂模块。
+Example 模块依赖注入工厂。
 
-提供各模块 CRUD 服务的依赖注入工厂函数，用于替代全局 *_CRUD 实例。
-使用 FastAPI 的 Depends 机制，确保每次请求创建新的 CRUD 实例，
-避免异步生命周期和连接状态问题。
+提供示例模块（分类、商品）CRUD 服务的依赖注入工厂函数。
+支持独立依赖和组合依赖两种使用方式。
 
 使用方式:
-    from fastapi import Depends
+    # 独立依赖
     from applications.example.dependencies import get_product_crud
     
     @router.post("/create")
     async def create(data: ProductCreate, crud: ProductCrud = Depends(get_product_crud)):
         return await crud.create(data)
+    
+    # 组合依赖（多模型联动）
+    from applications.example.dependencies import get_example_services, ExampleServices
+    
+    @router.post("/order")
+    async def create_order(data: OrderCreate, services: ExampleServices = Depends(get_example_services)):
+        product = await services.product.get_or_none(id=data.product_id)
+        category = await services.category.get_or_none(id=product.category_id)
+        ...
 """
 from dataclasses import dataclass
 
-from applications.base.services.audit_crud import AuditCrud
 from applications.example.services.example_crud import CategoryCrud, ProductCrud
-from applications.user.services.user_crud import UserCrud
 
 
 @dataclass
@@ -33,16 +39,6 @@ class ExampleServices:
     Example 模块服务组合。
     
     用于需要同时操作分类和商品的复杂业务场景。
-    
-    使用示例:
-        @router.post("/order/create")
-        async def create_order(
-            data: OrderCreate,
-            services: ExampleServices = Depends(get_example_services)
-        ):
-            category = await services.category.get_or_none(id=data.category_id)
-            product = await services.product.create(data)
-            ...
     """
     category: CategoryCrud
     product: ProductCrud
@@ -68,17 +64,3 @@ async def get_example_services() -> ExampleServices:
         category=CategoryCrud(),
         product=ProductCrud(),
     )
-
-
-# ==================== User 模块依赖（独立依赖） ====================
-
-async def get_user_crud() -> UserCrud:
-    """获取用户 CRUD 服务实例"""
-    return UserCrud()
-
-
-# ==================== Base 模块依赖（独立依赖） ====================
-
-async def get_audit_crud() -> AuditCrud:
-    """获取审计日志 CRUD 服务实例"""
-    return AuditCrud()

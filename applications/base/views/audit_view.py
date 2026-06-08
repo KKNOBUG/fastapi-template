@@ -13,7 +13,7 @@ from tortoise.expressions import Q
 
 from applications.base.schemas.audit_schema import AuditBatchDelete, AuditSelect
 from applications.base.services.audit_crud import AuditCrud
-from applications.dependencies import get_audit_crud
+from applications.base.dependencies import get_audit_crud
 from configure import LOGGER
 from core.exceptions import NotFoundException
 from core.responses import FailureResponse, SuccessResponse

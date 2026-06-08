@@ -11,7 +11,7 @@ import traceback
 from fastapi import APIRouter, Body, Query, Depends
 from tortoise.expressions import Q
 
-from applications.dependencies import get_user_crud
+from applications.user.dependencies import get_user_crud
 from applications.user.schemas.user_schema import (
     UserCreate,
     UserUpdate,
