@@ -44,8 +44,10 @@ async def get_login_access_token(
                 username=user.username,
                 state=user.state,
                 is_superuser=user.is_superuser,
+                token_version=user.token_version,
                 exp=expire,
-            )
+            ),
+            token_version=user.token_version,
         ),
         username=user.username,
         alias=user.alias,

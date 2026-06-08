@@ -178,34 +178,16 @@ def register_routers(app: FastAPI) -> None:
     redoc_modules["redoc_favicon_url"] = "/static/redoc/favicon.png"
 
     # 导入路由蓝图
-    from applications.base.views import base_public, base_secure
+    from applications.base.views import base_public, base_secure, router_secure, audit_secure
     from applications.user.views import user_public_router, user_secure_router
     from applications.example.views import example_category_router, example_product_router
 
     # 挂在路由蓝图
     app.include_router(router=base_public, prefix="/base", tags=["基础服务"])
-    app.include_router(
-        router=base_secure,
-        prefix="/base",
-        tags=["基础服务"],
-        dependencies=[DependAuth],
-    )
+    app.include_router(router=base_secure, prefix="/base", tags=["基础服务"], dependencies=[DependAuth])
+    app.include_router(router=audit_secure, prefix="/base", tags=["基础服务-审计模块"], dependencies=[DependAuth])
+    app.include_router(router=router_secure, prefix="/base", tags=["基础服务-路由模块"], dependencies=[DependAuth])
     app.include_router(router=user_public_router, prefix="/user", tags=["用户服务"])
-    app.include_router(
-        router=user_secure_router,
-        prefix="/user",
-        tags=["用户服务"],
-        dependencies=[DependAuth],
-    )
-    app.include_router(
-        router=example_category_router,
-        prefix="/example",
-        tags=["示例服务-商品分类"],
-        dependencies=[DependAuth],
-    )
-    app.include_router(
-        router=example_product_router,
-        prefix="/example",
-        tags=["示例服务-商品模型"],
-        dependencies=[DependAuth],
-    )
+    app.include_router(router=user_secure_router, prefix="/user", tags=["用户服务"], dependencies=[DependAuth])
+    app.include_router(router=example_category_router, prefix="/example", tags=["示例服务-商品分类"], dependencies=[DependAuth])
+    app.include_router(router=example_product_router, prefix="/example", tags=["示例服务-商品模型"], dependencies=[DependAuth])

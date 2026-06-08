@@ -41,4 +41,5 @@ class JWTPayload(BaseModel):
     username: str = Field(..., description="用户账号")
     state: int = Field(default=0, description="状态(0:启用, 1:禁用)")
     is_superuser: bool = Field(default=False, description="是否为超级管理员")
+    token_version: int = Field(default=0, description="Token版本号")
     exp: datetime = Field(..., description="过期时间")

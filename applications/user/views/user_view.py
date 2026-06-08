@@ -221,8 +221,8 @@ async def update_user_password(
     verified = verify_password(req_in.old_password, instance.password)
     if not verified:
         return FailureResponse(message="旧密码验证错误")
-    instance.password = get_password_hash(req_in.new_password)
-    await instance.save()
+    # 使用 UserCrud 方法，自动吊销所有 Token
+    await user_crud.update_password(user_id=user_id, new_password=req_in.new_password)
     data = await instance.to_dict(exclude_fields=["password"])
     return SuccessResponse(message="修改成功", data=data, total=1)
 
@@ -234,3 +234,19 @@ async def reset_password(
 ):
     data = await user_crud.reset_password(user_id)
     return SuccessResponse(data=data)
+
+
+@user_secure.post("/logout", summary="用户登出")
+async def logout(
+        user_crud: UserCrud = Depends(get_user_crud),
+):
+    """
+    用户主动登出：吊销当前用户所有 Token
+    """
+    user_id = CTX_USER_ID.get()
+    try:
+        await user_crud.logout(user_id=user_id)
+        return SuccessResponse(message="登出成功")
+    except Exception as e:
+        LOGGER.error(f"用户登出失败: {e}")
+        return FailureResponse(message=f"登出失败: {e}")
